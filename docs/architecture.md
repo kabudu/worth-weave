@@ -33,4 +33,8 @@ React UI <- typed Tauri IPC <- deterministic views <----+
 
 The application creates a singleton settings record during database initialization. Until a supported ISO reporting currency is selected, the interface remains in onboarding. The same backend-owned currency catalogue and validation path power the onboarding and Settings screens. A currency change invalidates reporting views while leaving broker-native currencies and exact values untouched.
 
+## Valuation provenance
+
+Market prices and FX rates are stored as exact coefficients and scales with their observation time and source. Manual entries are explicitly labelled `manual`. Direct and inverse FX pairs are supported. Consolidated portfolio value is returned only when every open holding has a price and every required reporting-currency conversion is available; missing inputs are counted and surfaced rather than treated as zero.
+
 The frontend currently uses TypeScript 6.0 because the stable `typescript-eslint` parser does not yet declare TypeScript 7 support. This should be revisited when its supported range advances.

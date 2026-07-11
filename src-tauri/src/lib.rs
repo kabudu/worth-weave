@@ -1,14 +1,16 @@
 mod db;
 mod error;
 mod imports;
+mod market;
 mod models;
 mod projections;
 
 use db::AppState;
 use error::{LedgerlyError, Result};
 use models::{
-    Account, ActivityEvent, AppSettings, CreateAccountInput, CurrencyOption, Holding, ImportResult,
-    IncomeSummary, PortfolioSummary, UpdateSettingsInput,
+    Account, ActivityEvent, AppSettings, CreateAccountInput, CurrencyOption, FxRate, Holding,
+    ImportResult, IncomeSummary, PortfolioSummary, PriceQuote, SetFxRateInput, SetPriceInput,
+    UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Manager, State};
 
@@ -71,6 +73,21 @@ fn income_summary(state: State<'_, AppState>) -> Result<Vec<IncomeSummary>> {
 }
 
 #[tauri::command]
+fn set_market_price(input: SetPriceInput, state: State<'_, AppState>) -> Result<PriceQuote> {
+    with_connection(&state, |connection| market::set_price(connection, &input))
+}
+
+#[tauri::command]
+fn set_fx_rate(input: SetFxRateInput, state: State<'_, AppState>) -> Result<FxRate> {
+    with_connection(&state, |connection| market::set_fx_rate(connection, &input))
+}
+
+#[tauri::command]
+fn portfolio_valuation(state: State<'_, AppState>) -> Result<ValuationSummary> {
+    with_connection(&state, |connection| market::valuation(connection))
+}
+
+#[tauri::command]
 fn import_broker_file(
     account_id: String,
     file_path: String,
@@ -113,6 +130,9 @@ pub fn run() {
             list_activity,
             list_holdings,
             income_summary,
+            set_market_price,
+            set_fx_rate,
+            portfolio_valuation,
             import_broker_file
         ])
         .run(tauri::generate_context!())
@@ -217,6 +237,32 @@ mod tests {
         let income = projections::income(&connection).expect("income");
         assert_eq!(income[0].dividends, "5");
         assert_eq!(income[0].total, "5");
+
+        let unavailable = market::valuation(&connection).expect("unavailable valuation");
+        assert_eq!(unavailable.missing_price_count, 1);
+        assert!(unavailable.total_value.is_none());
+        market::set_price(
+            &connection,
+            &SetPriceInput {
+                instrument_id: "GB00TEST0001".into(),
+                price: "20".into(),
+                currency: "USD".into(),
+            },
+        )
+        .expect("price");
+        market::set_fx_rate(
+            &connection,
+            &SetFxRateInput {
+                base_currency: "USD".into(),
+                quote_currency: "GBP".into(),
+                rate: "0.8".into(),
+            },
+        )
+        .expect("FX rate");
+        let valuation = market::valuation(&connection).expect("valuation");
+        assert_eq!(valuation.total_value.as_deref(), Some("96"));
+        assert_eq!(valuation.missing_price_count, 0);
+        assert_eq!(valuation.missing_fx_count, 0);
     }
 
     #[test]

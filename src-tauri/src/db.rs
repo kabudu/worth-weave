@@ -149,6 +149,23 @@ pub fn open(path: &Path) -> Result<Connection> {
            quantity_scale INTEGER,
            instrument_id TEXT,
            UNIQUE (account_id, source_id)
+         );
+         CREATE TABLE IF NOT EXISTS market_prices (
+           instrument_id TEXT PRIMARY KEY NOT NULL,
+           price_coefficient TEXT NOT NULL,
+           price_scale INTEGER NOT NULL,
+           currency TEXT NOT NULL,
+           as_of TEXT NOT NULL,
+           source TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS fx_rates (
+           base_currency TEXT NOT NULL,
+           quote_currency TEXT NOT NULL,
+           rate_coefficient TEXT NOT NULL,
+           rate_scale INTEGER NOT NULL,
+           as_of TEXT NOT NULL,
+           source TEXT NOT NULL,
+           PRIMARY KEY (base_currency, quote_currency)
          );",
     )?;
     Ok(connection)

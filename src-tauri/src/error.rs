@@ -22,6 +22,8 @@ pub enum LedgerlyError {
     InvalidAccount(String),
     #[error("invalid application settings: {0}")]
     InvalidSettings(String),
+    #[error("invalid market data: {0}")]
+    InvalidMarketData(String),
     #[error("application data directory is unavailable")]
     DataDirectoryUnavailable,
     #[error("application state is unavailable")]

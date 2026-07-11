@@ -20,6 +20,7 @@ function CurrencyForm({ currencies, initialCurrency, onSaved, submitLabel }: Cur
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["settings"] }),
         queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["valuation"] }),
       ]);
       onSaved?.();
     },

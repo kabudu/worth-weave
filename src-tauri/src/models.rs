@@ -86,3 +86,53 @@ pub struct IncomeSummary {
     pub interest: String,
     pub total: String,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetPriceInput {
+    pub instrument_id: String,
+    pub price: String,
+    pub currency: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetFxRateInput {
+    pub base_currency: String,
+    pub quote_currency: String,
+    pub rate: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PriceQuote {
+    pub instrument_id: String,
+    pub price: String,
+    pub currency: String,
+    pub as_of: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FxRate {
+    pub base_currency: String,
+    pub quote_currency: String,
+    pub rate: String,
+    pub as_of: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ValuedHolding {
+    pub holding: Holding,
+    pub price: Option<PriceQuote>,
+    pub market_value: Option<String>,
+    pub reporting_value: Option<String>,
+    pub reporting_currency: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ValuationSummary {
+    pub reporting_currency: String,
+    pub total_value: Option<String>,
+    pub missing_price_count: usize,
+    pub missing_fx_count: usize,
+    pub holdings: Vec<ValuedHolding>,
+}

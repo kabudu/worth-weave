@@ -60,10 +60,22 @@ const holdingSchema = z.object({
 const incomeSummarySchema = z.object({
   currency: z.string(), dividends: exactString, interest: exactString, total: exactString,
 });
+const priceQuoteSchema = z.object({
+  instrument_id: z.string(), price: exactString, currency: z.string(), as_of: z.string(), source: z.string(),
+});
+const valuationSummarySchema = z.object({
+  reporting_currency: z.string(), total_value: exactString.nullable(),
+  missing_price_count: z.number().int().nonnegative(), missing_fx_count: z.number().int().nonnegative(),
+  holdings: z.array(z.object({
+    holding: holdingSchema, price: priceQuoteSchema.nullable(), market_value: exactString.nullable(),
+    reporting_value: exactString.nullable(), reporting_currency: z.string(),
+  })),
+});
 
 export type ActivityEvent = z.infer<typeof activityEventSchema>;
 export type Holding = z.infer<typeof holdingSchema>;
 export type IncomeSummary = z.infer<typeof incomeSummarySchema>;
+export type ValuationSummary = z.infer<typeof valuationSummarySchema>;
 
 export async function getPortfolioSummary(signal?: AbortSignal): Promise<PortfolioSummary> {
   signal?.throwIfAborted();
@@ -104,6 +116,19 @@ export async function getHoldings(signal?: AbortSignal): Promise<Holding[]> {
 export async function getIncomeSummary(signal?: AbortSignal): Promise<IncomeSummary[]> {
   signal?.throwIfAborted();
   return z.array(incomeSummarySchema).parse(await invoke("income_summary"));
+}
+
+export async function getPortfolioValuation(signal?: AbortSignal): Promise<ValuationSummary> {
+  signal?.throwIfAborted();
+  return valuationSummarySchema.parse(await invoke("portfolio_valuation"));
+}
+
+export async function setMarketPrice(input: { instrument_id: string; price: string; currency: string }) {
+  return priceQuoteSchema.parse(await invoke("set_market_price", { input }));
+}
+
+export async function setFxRate(input: { base_currency: string; quote_currency: string; rate: string }) {
+  return invoke("set_fx_rate", { input });
 }
 
 export async function createAccount(input: {

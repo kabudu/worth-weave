@@ -77,14 +77,17 @@ const incomeSummarySchema = z.object({
   currency: z.string(), dividends: exactString, interest: exactString, total: exactString,
 });
 const priceQuoteSchema = z.object({
-  instrument_id: z.string(), price: exactString, currency: z.string(), as_of: z.string(), source: z.string(),
+  instrument_id: z.string(), price: exactString, currency: z.string(), as_of: z.string(), source: z.string(), stale: z.boolean(),
 });
 const valuationSummarySchema = z.object({
   reporting_currency: z.string(), total_value: exactString.nullable(),
   missing_price_count: z.number().int().nonnegative(), missing_fx_count: z.number().int().nonnegative(),
+  stale_price_count: z.number().int().nonnegative(), stale_fx_count: z.number().int().nonnegative(),
+  total_gain_loss: exactString.nullable(),
   holdings: z.array(z.object({
     holding: holdingSchema, price: priceQuoteSchema.nullable(), market_value: exactString.nullable(),
     reporting_value: exactString.nullable(), reporting_currency: z.string(),
+    reporting_cost_basis: exactString.nullable(), gain_loss: exactString.nullable(),
   })),
 });
 const portfolioSnapshotSchema = z.object({

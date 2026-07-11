@@ -27,7 +27,8 @@ function mockNativeCommands(onboardingComplete: boolean, aiOnboardingComplete = 
     };
     if (command === "portfolio_valuation") return {
       reporting_currency: "GBP", total_value: null, missing_price_count: 0,
-      missing_fx_count: 0, holdings: [],
+      missing_fx_count: 0, stale_price_count: 0, stale_fx_count: 0,
+      total_gain_loss: null, holdings: [],
     };
     if (command === "portfolio_allocation") return { reporting_currency: "GBP", by_account: [], by_currency: [] };
     if (command === "update_settings") return {

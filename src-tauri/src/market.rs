@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params};
 use rust_decimal::Decimal;
 
@@ -33,6 +33,17 @@ fn from_parts(coefficient: String, scale: u32) -> Result<Decimal> {
         .parse::<i128>()
         .map_err(|_| LedgerlyError::InvalidMarketData("stored decimal is invalid".into()))?;
     Ok(Decimal::from_i128_with_scale(coefficient, scale))
+}
+
+fn stale(as_of: &str, max_age_hours: i64) -> bool {
+    DateTime::parse_from_rfc3339(as_of)
+        .map(|value| {
+            Utc::now()
+                .signed_duration_since(value.with_timezone(&Utc))
+                .num_hours()
+                > max_age_hours
+        })
+        .unwrap_or(true)
 }
 
 fn validate_currency(currency: &str) -> Result<String> {
@@ -73,6 +84,7 @@ pub fn set_price(connection: &Connection, input: &SetPriceInput) -> Result<Price
         currency,
         as_of,
         source: "manual".into(),
+        stale: false,
     })
 }
 
@@ -110,27 +122,30 @@ fn price(connection: &Connection, instrument_id: &str) -> Result<Option<(PriceQu
         |row| Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, String>(4)?)),
     ).optional()?.map(|(coefficient, scale, currency, as_of, source)| {
         let value = from_parts(coefficient, scale)?;
-        Ok((PriceQuote { instrument_id: instrument_id.into(), price: value.to_string(), currency, as_of, source }, value))
+        let is_stale = stale(&as_of, 36);
+        Ok((PriceQuote { instrument_id: instrument_id.into(), price: value.to_string(), currency, as_of, source, stale: is_stale }, value))
     }).transpose()
 }
 
-fn fx(connection: &Connection, base: &str, quote: &str) -> Result<Option<Decimal>> {
+fn fx(connection: &Connection, base: &str, quote: &str) -> Result<Option<(Decimal, bool)>> {
     if base == quote {
-        return Ok(Some(Decimal::ONE));
+        return Ok(Some((Decimal::ONE, false)));
     }
-    let direct: Option<(String, u32)> = connection.query_row(
-        "SELECT rate_coefficient, rate_scale FROM fx_rates WHERE base_currency=?1 AND quote_currency=?2",
-        params![base, quote], |row| Ok((row.get(0)?, row.get(1)?)),
+    let direct: Option<(String, u32, String)> = connection.query_row(
+        "SELECT rate_coefficient, rate_scale, as_of FROM fx_rates WHERE base_currency=?1 AND quote_currency=?2",
+        params![base, quote], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).optional()?;
-    if let Some((coefficient, scale)) = direct {
-        return Ok(Some(from_parts(coefficient, scale)?));
+    if let Some((coefficient, scale, as_of)) = direct {
+        return Ok(Some((from_parts(coefficient, scale)?, stale(&as_of, 48))));
     }
-    let inverse: Option<(String, u32)> = connection.query_row(
-        "SELECT rate_coefficient, rate_scale FROM fx_rates WHERE base_currency=?1 AND quote_currency=?2",
-        params![quote, base], |row| Ok((row.get(0)?, row.get(1)?)),
+    let inverse: Option<(String, u32, String)> = connection.query_row(
+        "SELECT rate_coefficient, rate_scale, as_of FROM fx_rates WHERE base_currency=?1 AND quote_currency=?2",
+        params![quote, base], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     ).optional()?;
     inverse
-        .map(|(coefficient, scale)| from_parts(coefficient, scale).map(|rate| Decimal::ONE / rate))
+        .map(|(coefficient, scale, as_of)| {
+            from_parts(coefficient, scale).map(|rate| (Decimal::ONE / rate, stale(&as_of, 48)))
+        })
         .transpose()
 }
 
@@ -141,6 +156,10 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
     let mut total = Decimal::ZERO;
     let mut missing_price_count = 0;
     let mut missing_fx_count = 0;
+    let mut stale_price_count = 0;
+    let mut stale_fx_count = 0;
+    let mut total_gain = Decimal::ZERO;
+    let mut gain_complete = true;
     let mut valued = Vec::new();
     for holding in projections::holdings(connection)? {
         let quantity = Decimal::from_str(&holding.quantity)
@@ -148,8 +167,16 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
         let quote = price(connection, &holding.instrument_id)?;
         let (price_quote, market_value, reporting_value) = if let Some((price_quote, price)) = quote
         {
+            if price_quote.stale {
+                stale_price_count += 1;
+            }
             let market_value = quantity * price;
-            if let Some(rate) = fx(connection, &price_quote.currency, &reporting_currency)? {
+            if let Some((rate, is_stale)) =
+                fx(connection, &price_quote.currency, &reporting_currency)?
+            {
+                if is_stale {
+                    stale_fx_count += 1;
+                }
                 let reporting_value = market_value * rate;
                 total += reporting_value;
                 (
@@ -169,12 +196,48 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
             missing_price_count += 1;
             (None, None, None)
         };
+        let reporting_cost_basis = if holding.cost_basis_complete {
+            match (&holding.cost_basis, &holding.currency) {
+                (Some(cost), Some(currency)) => {
+                    let cost = Decimal::from_str(cost).map_err(|_| {
+                        LedgerlyError::InvalidMarketData("holding cost basis is invalid".into())
+                    })?;
+                    if let Some((rate, _)) = fx(connection, currency, &reporting_currency)? {
+                        Some((cost * rate).normalize().to_string())
+                    } else {
+                        gain_complete = false;
+                        None
+                    }
+                }
+                _ => {
+                    gain_complete = false;
+                    None
+                }
+            }
+        } else {
+            gain_complete = false;
+            None
+        };
+        let gain_loss = match (&reporting_value, &reporting_cost_basis) {
+            (Some(value), Some(cost)) => {
+                let gain = Decimal::from_str(value).unwrap_or_default()
+                    - Decimal::from_str(cost).unwrap_or_default();
+                total_gain += gain;
+                Some(gain.normalize().to_string())
+            }
+            _ => {
+                gain_complete = false;
+                None
+            }
+        };
         valued.push(ValuedHolding {
             holding,
             price: price_quote,
             market_value,
             reporting_value,
             reporting_currency: reporting_currency.clone(),
+            reporting_cost_basis,
+            gain_loss,
         });
     }
     let total_value =
@@ -184,6 +247,9 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
         total_value,
         missing_price_count,
         missing_fx_count,
+        stale_price_count,
+        stale_fx_count,
+        total_gain_loss: gain_complete.then(|| total_gain.normalize().to_string()),
         holdings: valued,
     })
 }

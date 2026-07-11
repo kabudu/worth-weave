@@ -10,7 +10,7 @@ Worthweave v1 is complete when a macOS user can onboard, import supported broker
 - [x] Device-aware, explicitly approved local-AI runtime and model onboarding.
 - [x] Deterministic open-quantity, average-cost, activity, and income projections.
 - [x] Position reconciliation against broker snapshots and explicit partial-history diagnostics.
-- [ ] Market prices and FX rates with timestamps, sources, staleness, and manual overrides.
+- [x] Market prices and FX rates with timestamps, sources, staleness, and manual overrides.
 - [ ] Reporting-currency value, gain/loss, allocation, snapshots, and historical performance.
 - [x] Human-readable portfolio export plus encrypted, versioned backup and restore.
 - [ ] Optional Ollama explanations grounded only in deterministic analytics.

@@ -144,6 +144,7 @@ pub struct PriceQuote {
     pub currency: String,
     pub as_of: String,
     pub source: String,
+    pub stale: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -162,6 +163,8 @@ pub struct ValuedHolding {
     pub market_value: Option<String>,
     pub reporting_value: Option<String>,
     pub reporting_currency: String,
+    pub reporting_cost_basis: Option<String>,
+    pub gain_loss: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -170,6 +173,9 @@ pub struct ValuationSummary {
     pub total_value: Option<String>,
     pub missing_price_count: usize,
     pub missing_fx_count: usize,
+    pub stale_price_count: usize,
+    pub stale_fx_count: usize,
+    pub total_gain_loss: Option<String>,
     pub holdings: Vec<ValuedHolding>,
 }
 

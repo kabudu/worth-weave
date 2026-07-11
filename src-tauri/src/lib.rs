@@ -381,6 +381,10 @@ mod tests {
         assert_eq!(valuation.total_value.as_deref(), Some("96"));
         assert_eq!(valuation.missing_price_count, 0);
         assert_eq!(valuation.missing_fx_count, 0);
+        assert_eq!(valuation.stale_price_count, 0);
+        assert_eq!(valuation.stale_fx_count, 0);
+        assert_eq!(valuation.total_gain_loss.as_deref(), Some("36"));
+        assert_eq!(valuation.holdings[0].gain_loss.as_deref(), Some("36"));
         let snapshot = market::capture_snapshot(&connection).expect("snapshot");
         assert_eq!(snapshot.total_value, "96");
         assert_eq!(market::snapshots(&connection).expect("snapshots").len(), 1);

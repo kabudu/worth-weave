@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Keep a Changelog validation and tag-driven GitHub Release creation using human-curated release notes.
 - Node 24-compatible Checkout v7 and Dependency Review v5 workflow actions.
 
+### Changed
+
+- Reworked onboarding, imports, portfolio reports, settings, and private AI guidance to use clear, task-focused language instead of internal technical terms.
+
 ### Security
 
 - Bounded, atomic broker imports with duplicate detection and immutable source events.

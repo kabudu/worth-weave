@@ -38,14 +38,14 @@ function CurrencyForm({ currencies, initialCurrency, onSaved, submitLabel }: Cur
 
   return (
     <form className="currency-form" onSubmit={submit}>
-      <label htmlFor="reporting-currency">Reporting currency</label>
+      <label htmlFor="reporting-currency">Main currency</label>
       <div className="currency-select-wrap">
         <span aria-hidden="true">{selected?.symbol ?? "¤"}</span>
         <select id="reporting-currency" name="reporting_currency" value={currency} onChange={(event) => setCurrency(event.target.value)}>
           {currencies.map((option) => <option value={option.code} key={option.code}>{option.code} — {option.name}</option>)}
         </select>
       </div>
-      <p>Portfolio totals, gains and reports will be converted into {selected?.name ?? currency}. Original broker currencies remain unchanged.</p>
+      <p>Worthweave will show your overall totals and gains in {selected?.name ?? currency}. Imported amounts keep their original currencies.</p>
       <button className="primary-button currency-submit" type="submit" disabled={mutation.isPending || currencies.length === 0}>
         {mutation.isPending ? "Saving…" : submitLabel} <span>→</span>
       </button>
@@ -97,10 +97,10 @@ export function Onboarding({ currencies }: { currencies: CurrencyOption[] }) {
         <h1>Bring your portfolio<br /><em>into one clear view.</em></h1>
         <p className="onboarding-intro">Choose how totals are displayed and which accounts you plan to import. Everything can be changed later.</p>
         <form className="initial-setup-form" onSubmit={(event) => { event.preventDefault(); setup.mutate(); }}>
-          <label htmlFor="reporting-currency">Reporting currency</label>
+          <label htmlFor="reporting-currency">Main currency</label>
           <div className="currency-select-wrap"><span aria-hidden="true">{selectedCurrency?.symbol ?? "¤"}</span><select id="reporting-currency" value={currency} onChange={(event) => setCurrency(event.target.value)}>{currencies.map((option) => <option value={option.code} key={option.code}>{option.code} — {option.name}</option>)}</select></div>
-          <p className="field-help">Your consolidated value and performance use this currency. Imported transactions retain their original currencies.</p>
-          <fieldset className="account-picker"><legend>Brokers and accounts <small>Optional</small></legend><p>Select the account types you hold with each broker. Tax-advantaged and taxable activity will always remain separate.</p><div className="broker-grid">{brokerGroups.map((group) => <fieldset className="broker-card" key={group.id}><legend>{group.name}</legend><div className="account-options">{group.accounts.map((account) => <label key={account.id} className={`account-option ${selectedAccounts.has(account.id) ? "selected" : ""}`}><input type="checkbox" aria-label={`${group.name} ${account.label}`} checked={selectedAccounts.has(account.id)} onChange={() => toggleAccount(account.id)} /><span><strong>{account.label}</strong><small>{account.detail}</small></span><i aria-hidden="true">✓</i></label>)}</div></fieldset>)}<fieldset className="broker-card robinhood-card"><legend>Robinhood</legend><label className="broker-region">Account region<select aria-label="Robinhood account region" value={robinhoodRegion} onChange={(event) => setRobinhoodRegion(event.target.value as "GB" | "US")}><option value="GB">UK</option><option value="US">US</option></select></label><div className="account-options robinhood-account-options">{robinhoodAccounts.map((account) => <label key={account.id} className={`account-option ${selectedAccounts.has(account.id) ? "selected" : ""}`}><input type="checkbox" aria-label={`Robinhood ${account.jurisdiction} ${account.label}`} checked={selectedAccounts.has(account.id)} onChange={() => toggleAccount(account.id)} /><span><strong>{account.label}</strong><small>{account.detail}</small></span><i aria-hidden="true">✓</i></label>)}</div><p className="broker-import-note">US CSV and UK statement imports require a matching Robinhood export format before data can be imported.</p></fieldset></div></fieldset>
+          <p className="field-help">Your overall value and performance use this currency. Imported amounts keep their original currencies.</p>
+          <fieldset className="account-picker"><legend>Brokers and accounts <small>Optional</small></legend><p>Choose the accounts you use. Worthweave always keeps each account’s activity separate.</p><div className="broker-grid">{brokerGroups.map((group) => <fieldset className="broker-card" key={group.id}><legend>{group.name}</legend><div className="account-options">{group.accounts.map((account) => <label key={account.id} className={`account-option ${selectedAccounts.has(account.id) ? "selected" : ""}`}><input type="checkbox" aria-label={`${group.name} ${account.label}`} checked={selectedAccounts.has(account.id)} onChange={() => toggleAccount(account.id)} /><span><strong>{account.label}</strong><small>{account.detail}</small></span><i aria-hidden="true">✓</i></label>)}</div></fieldset>)}<fieldset className="broker-card robinhood-card"><legend>Robinhood</legend><label className="broker-region">Where is your account?<select aria-label="Robinhood account region" value={robinhoodRegion} onChange={(event) => setRobinhoodRegion(event.target.value as "GB" | "US")}><option value="GB">UK</option><option value="US">US</option></select></label><div className="account-options robinhood-account-options">{robinhoodAccounts.map((account) => <label key={account.id} className={`account-option ${selectedAccounts.has(account.id) ? "selected" : ""}`}><input type="checkbox" aria-label={`Robinhood ${account.jurisdiction} ${account.label}`} checked={selectedAccounts.has(account.id)} onChange={() => toggleAccount(account.id)} /><span><strong>{account.label}</strong><small>{account.detail}</small></span><i aria-hidden="true">✓</i></label>)}</div><p className="broker-import-note">Robinhood imports will be available after we have tested sample UK and US export files.</p></fieldset></div></fieldset>
           <button className="primary-button currency-submit" type="submit" disabled={setup.isPending}>{setup.isPending ? "Preparing your portfolio…" : "Continue"} <span>→</span></button>
           {setup.isError && <small className="form-error" role="alert">{String(setup.error)}</small>}
         </form>
@@ -139,7 +139,7 @@ export function SettingsDialog({ currencies, currentCurrency, open, onClose, aiR
         <button type="button" className="dialog-close" onClick={onClose} aria-label="Close settings">×</button>
       </div>
       <section className="settings-content">
-        <div><h3>Reporting currency</h3><p>Changes how consolidated portfolio values are presented. Source transactions are never rewritten.</p></div>
+        <div><h3>Main currency</h3><p>Choose the currency used for overall totals. Your imported amounts will not be changed.</p></div>
         <CurrencyForm currencies={currencies} initialCurrency={currentCurrency} onSaved={onClose} submitLabel="Save changes" />
       </section>
       {open && <AiSettingsPanel runtime={aiRuntime} model={aiModel} />}

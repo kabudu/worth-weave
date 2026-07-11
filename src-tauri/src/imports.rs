@@ -507,7 +507,10 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
         .ok_or_else(|| LedgerlyError::Csv("IBKR export contains no dated data rows".into()))?;
     let end = dates.iter().max().copied().expect("non-empty dates");
     let warnings = if ignored {
-        vec!["Non-transaction statement sections were retained for coverage detection but not ledger events.".into()]
+        vec![
+            "Worthweave used the transaction rows and ignored other sections of this statement."
+                .into(),
+        ]
     } else {
         Vec::new()
     };

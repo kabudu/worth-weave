@@ -117,13 +117,13 @@ export function App() {
 
       <main id="top">
         <header className="topbar">
-          <div className="eyebrow"><span /> Local portfolio analysis</div>
+          <div className="eyebrow"><span /> Your portfolio stays on this Mac</div>
           <div className="top-actions">
             <button className="primary-button" type="button" onClick={() => setImportOpen(true)}><span>＋</span> Import data</button>
           </div>
         </header>
 
-        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} attribution={attribution.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private local analysis</span><h1>Portfolio insights</h1><p>Ask questions about calculations Worthweave has already verified.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} /></section> : <>
+        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} attribution={attribution.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private AI</span><h1>Ask about your portfolio</h1><p>Get clear answers based on the figures already shown in Worthweave.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} /></section> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
             <p className="kicker">{dateLabel}</p>
@@ -147,7 +147,7 @@ export function App() {
           <article className="metric-card featured">
             <div className="metric-heading"><span>Total portfolio</span><span className="status-chip">{valuation.data?.total_value ? "Valued" : importCount > 0 ? "Needs market data" : "Awaiting data"}</span></div>
             <strong className="metric-value">{valuation.data?.total_value ? new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_value)) : "—"}</strong>
-            <p>{valuation.data?.total_value ? `${valuation.data.total_gain_loss ? `${new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_gain_loss))} total gain/loss · ` : ""}${valuation.data.stale_price_count + valuation.data.stale_fx_count} stale inputs` : "Add current prices and exchange rates to calculate your total."}</p>
+            <p>{valuation.data?.total_value ? `${valuation.data.total_gain_loss ? `${new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_gain_loss))} total gain/loss · ` : ""}${valuation.data.stale_price_count + valuation.data.stale_fx_count} prices or exchange rates need updating` : "Add current prices and exchange rates to calculate your total."}</p>
           </article>
           <article className="metric-card">
             <div className="metric-icon violet">◈</div>
@@ -157,7 +157,7 @@ export function App() {
           </article>
           <article className="metric-card">
             <div className="metric-icon amber">↗</div>
-            <span>Imports verified</span>
+            <span>Files imported</span>
             <strong className="metric-value small">{summary.isPending ? "…" : importCount}</strong>
             <p>Broker files checked for duplicates and assigned to the right account</p>
           </article>
@@ -172,7 +172,7 @@ export function App() {
             <div className="journey-steps">
               <div className={`journey-step ${journeyStep === 1 ? "current" : "complete"}`}><span>{journeyStep > 1 ? "✓" : "1"}</span><div><strong>Create your accounts</strong><p>Keep Invest and ISA histories safely separated.</p></div>{journeyStep === 1 ? <button type="button" onClick={() => setImportOpen(true)}>Begin <span>→</span></button> : <small>Done</small>}</div>
               <div className={`journey-step ${journeyStep === 2 ? "current" : journeyStep > 2 ? "complete" : ""}`}><span>{journeyStep > 2 ? "✓" : "2"}</span><div><strong>Import broker history</strong><p>Drop in CSV files now and add later periods anytime.</p></div>{journeyStep === 2 ? <button type="button" onClick={() => setImportOpen(true)}>Import <span>→</span></button> : <small>{journeyStep > 2 ? "Done" : "Next"}</small>}</div>
-              <div className={`journey-step ${journeyStep === 3 ? "current" : ""}`}><span>3</span><div><strong>Reconcile and explore</strong><p>Worthweave checks holdings before showing performance.</p></div>{journeyStep === 3 ? <button type="button" onClick={() => setActiveView("Portfolio")}>Explore <span>→</span></button> : <small>Then</small>}</div>
+              <div className={`journey-step ${journeyStep === 3 ? "current" : ""}`}><span>3</span><div><strong>Check and explore</strong><p>Compare your holdings and see how your investments are doing.</p></div>{journeyStep === 3 ? <button type="button" onClick={() => setActiveView("Portfolio")}>Explore <span>→</span></button> : <small>Then</small>}</div>
             </div>
           </article>
 
@@ -180,7 +180,7 @@ export function App() {
         </section>
         </>}
 
-        <footer><span>Worthweave · Local mode</span><span>Verified calculations <i /> {settings.data.ai_runtime ? "Private AI configured" : "Private AI optional"}</span></footer>
+        <footer><span>Worthweave · Your data stays here</span><span>Figures calculated by Worthweave <i /> {settings.data.ai_runtime ? "Private AI ready" : "Private AI optional"}</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
         <SettingsDialog currencies={currencies.data} currentCurrency={reportingCurrency} aiRuntime={settings.data.ai_runtime} aiModel={settings.data.ai_model} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </main>

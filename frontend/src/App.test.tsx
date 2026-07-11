@@ -38,7 +38,7 @@ function mockNativeCommands(onboardingComplete: boolean, aiOnboardingComplete = 
       reporting_currency: "GBP", coverage_start: null, coverage_end: null, status: "unavailable",
       realized_gain_loss: null, unrealized_gain_loss: null, dividends: null, interest: null,
       fees: null, taxes: null, fx_impact: null, attributed_subtotal: null, total_return: null,
-      notes: ["Import broker history to calculate return attribution."],
+      notes: ["Import your account history to calculate your investment return."],
     };
     if (command === "portfolio_allocation") return { reporting_currency: "GBP", by_account: [], by_currency: [], by_platform: [], by_asset_class: [], by_sector: [], by_geography: [] };
     if (command === "update_settings") return {
@@ -73,23 +73,23 @@ test("renders truthful empty portfolio state", async () => {
 
   expect(await screen.findByRole("heading", { name: /your wealth, in focus/i })).toBeInTheDocument();
   expect(await screen.findByText("Awaiting data")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /set up local ai in settings/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /set up private ai in settings/i })).toBeDisabled();
   expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "list_holdings")).toBe(false);
   expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "list_accounts")).toBe(false);
 
   fireEvent.click(screen.getByRole("button", { name: "Portfolio" }));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_holdings"));
-  expect(await screen.findByRole("heading", { name: /what shaped your return/i })).toBeInTheDocument();
-  expect(screen.getByText(/import broker history to calculate return attribution/i)).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /what changed your return/i })).toBeInTheDocument();
+  expect(screen.getByText(/import your account history to calculate your investment return/i)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Overview" }));
 
   fireEvent.click(screen.getByRole("button", { name: /import data/i }));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_accounts"));
-  expect(screen.getByRole("heading", { name: /import broker data/i })).toBeInTheDocument();
-  expect(screen.getByText(/broker credentials are never required/i)).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /import account history/i })).toBeInTheDocument();
+  expect(screen.getByText(/never need to share your broker password/i)).toBeInTheDocument();
 });
 
-test("requires reporting currency during first-run onboarding", async () => {
+test("requires a main currency during first-run onboarding", async () => {
   mockNativeCommands(false);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -107,7 +107,7 @@ test("requires reporting currency during first-run onboarding", async () => {
   fireEvent.change(screen.getByLabelText("Robinhood account region"), { target: { value: "US" } });
   expect(screen.getByRole("checkbox", { name: /robinhood us roth ira/i })).not.toBeChecked();
   expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "portfolio_summary")).toBe(false);
-  const currencySelect = screen.getByLabelText("Reporting currency");
+  const currencySelect = screen.getByLabelText("Main currency");
   fireEvent.change(currencySelect, { target: { value: "EUR" } });
   expect(currencySelect).toHaveValue("EUR");
   fireEvent.click(screen.getByRole("button", { name: /continue/i }));
@@ -128,9 +128,9 @@ test("offers explicit device-tuned local AI setup or skip", async () => {
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
-  expect(await screen.findByRole("heading", { name: /private insight/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /clear answers/i })).toBeInTheDocument();
   expect(await screen.findByText("gpt-oss-20b-mxfp4-q8")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /set up recommended ai/i })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /^set up private ai/i })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: /continue without ai/i }));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("skip_ai_setup"));
 });

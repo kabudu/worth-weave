@@ -414,30 +414,29 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
     let total_return = (components_complete && fx_complete).then(|| subtotal.unwrap_or_default());
     let mut notes = Vec::new();
     if coverage.0.is_none() {
-        notes.push("Import broker history to calculate return attribution.".into());
+        notes.push("Import your account history to calculate your investment return.".into());
     }
     if !realized_complete {
         notes.push("Realised gains are unavailable where transaction history, quantities, amounts, or exchange rates are incomplete.".into());
     }
     if unrealized.is_none() {
-        notes.push("Unrealised gains require complete cost basis, current prices, and exchange rates for every open holding.".into());
+        notes.push("To calculate gains on investments you still own, add your full account history, current prices and any missing exchange rates.".into());
     }
     if !cash_complete {
         notes.push(
-            "Some income, fee, or tax events could not be converted into the reporting currency."
-                .into(),
+            "Some income, fees or taxes could not be converted into your main currency.".into(),
         );
     }
     if unclassified_event_count > 0 {
         notes.push(format!(
-            "{unclassified_event_count} corporate action, in-kind transfer, or unclassified cash event(s) require review before attribution can be complete."
+            "{unclassified_event_count} account event(s) need checking before Worthweave can calculate your full return."
         ));
     }
     if foreign_activity {
-        notes.push("Foreign-currency components use the latest available FX rate. True FX attribution requires transaction-date rates, so total return is withheld.".into());
+        notes.push("Some investments use another currency. Add exchange rates for the transaction dates before Worthweave can show your full return.".into());
     }
     if coverage.0.is_some() {
-        notes.push("Results cover imported history only; earlier activity can change cost basis and realised returns.".into());
+        notes.push("These figures only cover the history you imported. Earlier activity may change the amount invested and gains from investments you sold.".into());
     }
     let status = if coverage.0.is_none() {
         "unavailable"
@@ -468,7 +467,7 @@ pub fn capture_snapshot(connection: &Connection) -> Result<PortfolioSnapshot> {
     let valuation = valuation(connection)?;
     let total = valuation.total_value.ok_or_else(|| {
         LedgerlyError::InvalidMarketData(
-            "a snapshot requires prices and FX rates for every open holding".into(),
+            "add current prices and exchange rates for every investment before saving today’s value".into(),
         )
     })?;
     let total_decimal = Decimal::from_str(&total)

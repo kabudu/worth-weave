@@ -130,16 +130,16 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
   return (
     <dialog ref={dialogRef} className="import-dialog" onClose={close}>
       <div className="dialog-topline">
-        <div><span className="section-kicker">Private file import</span><h2>Import broker data</h2></div>
+        <div><span className="section-kicker">Your files stay on this Mac</span><h2>Import account history</h2></div>
         <button type="button" className="dialog-close" onClick={close} aria-label="Close import dialog">×</button>
       </div>
 
       {result ? (
         <section className="import-success" aria-live="polite">
           <span>✓</span>
-          <h3>Import verified</h3>
+          <h3>Import complete</h3>
           <p>{result.events_added.toLocaleString()} transactions and cash events added.</p>
-          <dl><div><dt>Coverage starts</dt><dd>{result.coverage_start}</dd></div><div><dt>Coverage ends</dt><dd>{result.coverage_end}</dd></div></dl>
+          <dl><div><dt>First date</dt><dd>{result.coverage_start}</dd></div><div><dt>Last date</dt><dd>{result.coverage_end}</dd></div></dl>
           {result.warnings.map((warning) => <small key={warning}>{warning}</small>)}
           <button className="primary-button" type="button" onClick={close}>Done</button>
         </section>
@@ -148,7 +148,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
           <form onSubmit={handleCreate}>
             <div className="form-number">1</div>
             <h3>Create an account</h3>
-            <p>Separate accounts keep ISA and taxable activity from being combined.</p>
+            <p>Create each account separately so their investments and tax treatment never get mixed together.</p>
             <label>Broker<select value={broker} onChange={(event) => changeBroker(event.target.value as Broker)}><option value="trading_212">Trading 212</option><option value="ibkr">Interactive Brokers</option><option value="robinhood">Robinhood</option></select></label>
             {broker === "robinhood" && <label>Region<select value={jurisdiction} onChange={(event) => changeJurisdiction(event.target.value as Account["jurisdiction"])}><option value="GB">United Kingdom</option><option value="US">United States</option></select></label>}
             <label>Account type<select value={accountType} onChange={(event) => changeAccountType(event.target.value as AccountType)}>{accountTypeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
@@ -159,16 +159,16 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
 
           <form onSubmit={handleImport}>
             <div className="form-number">2</div>
-            <h3>Choose a CSV export</h3>
-            <p>The file is processed locally and protected from duplicate imports.</p>
-            <label>Destination account<select value={effectiveSelectedId} required onChange={(event) => setSelectedId(event.target.value)}><option value="" disabled>Select an account</option>{accounts.data?.map((account) => <option value={account.id} key={account.id}>{account.display_name}</option>)}</select></label>
-            <button className="file-drop" type="button" disabled={!importSupported} onClick={chooseFile}><span>{importSupported ? filePath ? filePath.split(/[\\/]/).at(-1) : "Choose CSV file" : "Robinhood import unavailable"}</span><small>{importSupported ? "Maximum 50 MB · CSV only" : "A representative Robinhood export is required to validate this importer"}</small></button>
-            <button type="submit" className="primary-button" disabled={!effectiveSelectedId || !filePath || !importSupported || importMutation.isPending}>{importMutation.isPending ? "Verifying…" : "Verify and import"}</button>
+            <h3>Choose an exported CSV file</h3>
+            <p>Worthweave checks the file on this Mac and will not import the same file twice.</p>
+            <label>Import into<select value={effectiveSelectedId} required onChange={(event) => setSelectedId(event.target.value)}><option value="" disabled>Select an account</option>{accounts.data?.map((account) => <option value={account.id} key={account.id}>{account.display_name}</option>)}</select></label>
+            <button className="file-drop" type="button" disabled={!importSupported} onClick={chooseFile}><span>{importSupported ? filePath ? filePath.split(/[\\/]/).at(-1) : "Choose CSV file" : "Robinhood import is not ready yet"}</span><small>{importSupported ? "CSV files up to 50 MB" : "We need to test sample Robinhood export files first"}</small></button>
+            <button type="submit" className="primary-button" disabled={!effectiveSelectedId || !filePath || !importSupported || importMutation.isPending}>{importMutation.isPending ? "Checking and importing…" : "Import file"}</button>
             {importMutation.isError && <small className="form-error" role="alert">{importMutation.error.message}</small>}
           </form>
         </div>
       )}
-      <p className="dialog-privacy"><span>●</span> Broker credentials are never required for file imports.</p>
+      <p className="dialog-privacy"><span>●</span> You never need to share your broker password.</p>
     </dialog>
   );
 }

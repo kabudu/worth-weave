@@ -42,16 +42,16 @@ test("completes accessible first-run onboarding", async ({ page }) => {
   const firstScan = await new AxeBuilder({ page }).analyze();
   expect(firstScan.violations).toEqual([]);
   await page.getByRole("button", { name: /continue/i }).click();
-  await expect(page.getByRole("heading", { name: /private insight/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /clear answers/i })).toBeVisible();
   await page.getByRole("button", { name: /continue without ai/i }).click();
   await expect(page.getByRole("heading", { name: /your wealth, in focus/i })).toBeVisible();
   if (process.env.CAPTURE_SCREENSHOTS) { await page.waitForTimeout(300); await page.screenshot({ path: "../.dev/screenshots/dashboard.png", fullPage: true }); }
   const dashboardScan = await new AxeBuilder({ page }).analyze();
   expect(dashboardScan.violations).toEqual([]);
   await page.getByRole("button", { name: "Insights", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Portfolio insights" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ask about your portfolio" })).toBeVisible();
   await page.getByRole("button", { name: /import data/i }).click();
-  await expect(page.getByRole("heading", { name: /import broker data/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /import account history/i })).toBeVisible();
   const dialogScan = await new AxeBuilder({ page }).analyze();
   expect(dialogScan.violations).toEqual([]);
   await page.getByRole("button", { name: "Close import dialog" }).click();
@@ -62,8 +62,8 @@ test("completes accessible first-run onboarding", async ({ page }) => {
   expect(settingsScan.violations).toEqual([]);
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("button", { name: "Portfolio", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Your holdings" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "What shaped your return" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your investments" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What changed your return" })).toBeVisible();
   const portfolioScan = await new AxeBuilder({ page }).analyze();
   expect(portfolioScan.violations).toEqual([]);
   expect(browserErrors).toEqual([]);

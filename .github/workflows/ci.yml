@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: 1.97.0
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --dir frontend exec playwright install chromium
+
+      - name: Validate release metadata
+        run: ./scripts/check-release.sh
+
+      - name: Validate Rust
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml --check
+          cargo test --manifest-path src-tauri/Cargo.toml --locked
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features --locked -- -D warnings
+
+      - name: Validate frontend
+        run: |
+          pnpm --dir frontend test
+          pnpm --dir frontend lint
+          pnpm --dir frontend build
+          pnpm --dir frontend test:e2e
+
+      - name: Audit production JavaScript dependencies
+        run: pnpm --dir frontend audit --prod
+
+      - name: Audit Rust dependencies
+        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2
+        with:
+          lockfile: src-tauri/Cargo.lock
+
+  dependency-review:
+    if: github.event_name == 'pull_request' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4

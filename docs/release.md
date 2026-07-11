@@ -2,6 +2,29 @@
 
 Worthweave produces a native `.app` and `.dmg` through Tauri. Local verification may use an ad-hoc signed artifact; public distribution must use an Apple Developer ID and notarisation.
 
+## Release source of truth
+
+- Worthweave follows [Semantic Versioning](https://semver.org/) and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+- `CHANGELOG.md` is human-curated. Automation validates and publishes its release section; it never invents or commits release notes.
+- `frontend/package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` must contain the same version.
+- A public release is initiated by pushing an annotated `vMAJOR.MINOR.PATCH` tag whose version matches those files and a dated changelog section.
+
+## Preparing a release
+
+1. Move relevant entries from `Unreleased` into `## [MAJOR.MINOR.PATCH] - YYYY-MM-DD`, leaving an empty `Unreleased` section for future work.
+2. Update the version in all three package files.
+3. Add Keep a Changelog comparison links at the bottom of `CHANGELOG.md`.
+4. Run `./scripts/check-release.sh vMAJOR.MINOR.PATCH` and the release gates below.
+5. Commit the release preparation.
+6. Create and push an annotated tag:
+
+   ```bash
+   git tag -a vMAJOR.MINOR.PATCH -m "Worthweave vMAJOR.MINOR.PATCH"
+   git push origin master vMAJOR.MINOR.PATCH
+   ```
+
+The tag workflow validates the version and changelog, builds and notarises the application, then creates the GitHub Release using the matching changelog section and uploads the DMG and checksum. If any gate fails, no GitHub Release is created.
+
 ## Release gates
 
 1. Run Rust tests and strict Clippy.
@@ -9,7 +32,8 @@ Worthweave produces a native `.app` and `.dmg` through Tauri. Local verification
 3. Run `cargo audit` and `pnpm audit --prod`; investigate any vulnerability before release.
 4. From the repository root, build with `frontend/node_modules/.bin/tauri build`. Local builds may be unsigned or ad-hoc signed; the release workflow supplies the configured Developer ID identity.
 5. Verify the application bundle with `codesign --verify --deep --strict --verbose=2` and inspect it with `spctl --assess --type execute --verbose=2`.
-6. Public releases are built by `.github/workflows/macos-release.yml`. The workflow imports the Developer ID certificate into an ephemeral keychain, validates notarisation access, runs the release gates, asks Tauri to sign and notarise, verifies the hardened-runtime signature and stapled tickets, and publishes the DMG plus its SHA-256 checksum.
+6. Run `./scripts/check-release.sh` to validate package-version alignment and changelog structure.
+7. Public releases are built by `.github/workflows/macos-release.yml`. The workflow imports the Developer ID certificate into an ephemeral keychain, validates notarisation access, runs the release gates, asks Tauri to sign and notarise, verifies the hardened-runtime signature and stapled tickets, creates the GitHub Release, and publishes the DMG plus its SHA-256 checksum.
 
 ## GitHub configuration
 
@@ -25,7 +49,9 @@ Configure these as repository variables where possible (secrets are also accepte
 - `APPLE_SIGNING_IDENTITY`: full Developer ID Application identity reported by `security find-identity`, including the team identifier.
 - `APPLE_TEAM_ID`: Apple Developer team identifier.
 
-Publishing a GitHub release triggers the signed build for that release tag. A manual workflow run can either build the selected commit as a downloadable workflow artifact or accept an existing `release_tag` and attach the verified artifacts to that release.
+Pushing a valid `v*` tag triggers the signed build and creates the GitHub Release only after successful verification. A manual workflow run can build the selected commit as a downloadable workflow artifact, or accept an existing `release_tag` and create or update that release after verification.
+
+The workflow does not modify `CHANGELOG.md`; changing source after a tag would make the tag non-reproducible. Pull-request CI validates version alignment and changelog structure, while reviewers ensure user-visible changes are recorded under `Unreleased`.
 
 Never commit certificates, App Store Connect keys, passwords, broker exports, or notarisation credentials.
 

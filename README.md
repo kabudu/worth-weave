@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/kabudu/worth-weave/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/kabudu/worth-weave/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/kabudu/worth-weave/actions/workflows/macos-release.yml"><img alt="macOS release" src="https://github.com/kabudu/worth-weave/actions/workflows/macos-release.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
   <img alt="macOS 13 or later" src="https://img.shields.io/badge/macOS-13%2B-111111?logo=apple">
@@ -110,7 +111,7 @@ Create local `.app` and `.dmg` bundles with:
 frontend/node_modules/.bin/tauri build
 ```
 
-Public GitHub releases use `.github/workflows/macos-release.yml` to import the Developer ID certificate into an ephemeral keychain, run the release gates, sign and notarise the application, verify Gatekeeper and stapled tickets, and publish the DMG with its SHA-256 checksum.
+Pushing a changelog-backed `vMAJOR.MINOR.PATCH` tag runs `.github/workflows/macos-release.yml`. It imports the Developer ID certificate into an ephemeral keychain, runs the release gates, signs and notarises the application, verifies Gatekeeper and stapled tickets, creates the GitHub Release from the matching changelog section, and publishes the DMG with its SHA-256 checksum.
 
 See the [release process](docs/release.md) for required GitHub secrets and variables.
 
@@ -121,6 +122,18 @@ See the [release process](docs/release.md) for required GitHub secrets and varia
 - [Security model](docs/security.md)
 - [Release process](docs/release.md)
 - [v1 completion contract](docs/roadmap.md)
+- [Product roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Support](SUPPORT.md)
+- [Governance](GOVERNANCE.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Open-source readiness](docs/open-source-readiness.md)
+
+## Contributing
+
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before starting, use synthetic financial fixtures only, and report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
 
 ## License
 

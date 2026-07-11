@@ -10,6 +10,8 @@
 
 Worthweave brings investments held across multiple brokers and account types into one coherent macOS application. It reconstructs holdings from broker history, keeps Invest and Stocks and Shares ISA records separate, and reports portfolio value, performance, income, and allocation in a configurable reporting currency.
 
+Planned reporting and analysis features are documented in the [product roadmap](ROADMAP.md).
+
 Financial results come from deterministic Rust code using exact decimal representations. The optional local AI can explain those verified results, but it cannot create transactions, change the ledger, or substitute speculation for missing data.
 
 ## Highlights

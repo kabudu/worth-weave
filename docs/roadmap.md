@@ -1,5 +1,7 @@
 # Worthweave v1 completion contract
 
+Future reporting and analysis work is tracked in the root [product roadmap](../ROADMAP.md).
+
 Worthweave v1 is complete when a macOS user can onboard, import supported broker history, reconcile positions, value the portfolio in a chosen reporting currency, explore performance and allocation, back up and restore local data, and optionally ask a local LLM to explain deterministic analytics.
 
 ## Milestones

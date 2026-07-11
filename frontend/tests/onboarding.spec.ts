@@ -52,11 +52,39 @@ test("completes accessible first-run onboarding", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Ask about your portfolio" })).toBeVisible();
   await page.getByRole("button", { name: /import data/i }).click();
   await expect(page.getByRole("heading", { name: /import account history/i })).toBeVisible();
+  const importLayout = await page.locator(".import-dialog").evaluate((dialog) => {
+    const dialogRect = dialog.getBoundingClientRect();
+    const picker = dialog.querySelector<HTMLElement>(".file-drop");
+    const pickerRect = picker?.getBoundingClientRect();
+    const column = picker?.parentElement;
+    const columnStyle = column ? getComputedStyle(column) : null;
+    return {
+      centreOffsetX: Math.abs((dialogRect.left + dialogRect.right) / 2 - window.innerWidth / 2),
+      centreOffsetY: Math.abs((dialogRect.top + dialogRect.bottom) / 2 - window.innerHeight / 2),
+      pickerDisplay: picker ? getComputedStyle(picker).display : "",
+      pickerWidth: pickerRect?.width ?? 0,
+      columnContentWidth: column
+        ? column.clientWidth - Number.parseFloat(columnStyle?.paddingLeft ?? "0") - Number.parseFloat(columnStyle?.paddingRight ?? "0")
+        : 0,
+    };
+  });
+  expect(importLayout.centreOffsetX).toBeLessThanOrEqual(1);
+  expect(importLayout.centreOffsetY).toBeLessThanOrEqual(1);
+  expect(importLayout.pickerDisplay).toBe("grid");
+  expect(Math.abs(importLayout.pickerWidth - importLayout.columnContentWidth)).toBeLessThanOrEqual(1);
   const dialogScan = await new AxeBuilder({ page }).analyze();
   expect(dialogScan.violations).toEqual([]);
   await page.getByRole("button", { name: "Close import dialog" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  const settingsOffset = await page.locator(".settings-dialog").evaluate((dialog) => {
+    const rect = dialog.getBoundingClientRect();
+    return Math.max(
+      Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2),
+      Math.abs((rect.top + rect.bottom) / 2 - window.innerHeight / 2),
+    );
+  });
+  expect(settingsOffset).toBeLessThanOrEqual(1);
   await expect(page.getByRole("switch", { name: /restoring replaces all current portfolio data/i })).not.toBeChecked();
   await expect(page.getByRole("button", { name: "Restore backup" })).toBeDisabled();
   const settingsScan = await new AxeBuilder({ page }).analyze();

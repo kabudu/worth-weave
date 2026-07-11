@@ -81,6 +81,8 @@ jobs:
           workspaces: src-tauri -> target
 
       - name: Validate release credentials
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -91,6 +93,9 @@ jobs:
           : "${APPLE_PASSWORD:?APPLE_PASSWORD must be configured}"
           : "${APPLE_TEAM_ID:?APPLE_TEAM_ID must be configured}"
           : "${TAURI_SIGNING_PRIVATE_KEY:?TAURI_SIGNING_PRIVATE_KEY must be configured}"
+          if [[ -n "${{ steps.release.outputs.tag }}" ]]; then
+            : "${CARGO_REGISTRY_TOKEN:?CARGO_REGISTRY_TOKEN must be configured for tagged releases}"
+          fi
           xcrun notarytool history \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
@@ -198,6 +203,37 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app.tar.gz
             src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
             src-tauri/target/release/bundle/macos/latest.json
+
+      - name: Publish crate to crates.io
+        if: steps.release.outputs.tag != ''
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$(cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 --no-deps)"
+          crate_name="$(jq -r '.packages[0].name' <<<"$metadata")"
+          crate_version="$(jq -r '.packages[0].version' <<<"$metadata")"
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            "https://crates.io/api/v1/crates/${crate_name}/${crate_version}")"
+          case "$status" in
+            200)
+              echo "${crate_name} ${crate_version} is already published; skipping."
+              ;;
+            404)
+              # tauri-build generates schema files beside the packaged source, so
+              # Cargo's clean-tree verification is incompatible with this app crate.
+              # The release tests and signed production build above provide verification.
+              cargo publish \
+                --manifest-path src-tauri/Cargo.toml \
+                --locked \
+                --no-verify
+              ;;
+            *)
+              echo "crates.io version check failed with HTTP ${status}." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Create GitHub release and upload artifacts
         if: steps.release.outputs.tag != ''

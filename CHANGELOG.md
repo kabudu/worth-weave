@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Configurable reporting currency, encrypted backups, and human-readable exports.
 - Optional device-aware local AI setup grounded in deterministic analytics.
 - Signed and notarised macOS release automation.
+- Idempotent crates.io publication for the Rust crate during tagged releases.
 - Open-source community health files, privacy-aware contribution templates, pull-request CI, Dependabot, and immutable GitHub Action pins.
 - Keep a Changelog validation and tag-driven GitHub Release creation using human-curated release notes.
 - Node 24-compatible Checkout v7 and Dependency Review v5 workflow actions.

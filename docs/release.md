@@ -23,7 +23,7 @@ Worthweave produces a native `.app` and `.dmg` through Tauri. Local verification
    git push origin master vMAJOR.MINOR.PATCH
    ```
 
-The tag workflow validates the version and changelog, builds and notarises the application, then creates the GitHub Release using the matching changelog section. It uploads the DMG and checksum together with the signed updater archive, signature, and `latest.json` manifest. If any gate fails, no GitHub Release is created.
+The tag workflow validates the version and changelog, builds and notarises the application, publishes the same version of the `worthweave` Rust crate to crates.io, then creates the GitHub Release using the matching changelog section. It uploads the DMG and checksum together with the signed updater archive, signature, and `latest.json` manifest. If any gate fails, no GitHub Release is created. Rerunning a release safely skips crates.io publication when that exact crate version already exists.
 
 ## Release gates
 
@@ -33,7 +33,7 @@ The tag workflow validates the version and changelog, builds and notarises the a
 4. From the repository root, build with `frontend/node_modules/.bin/tauri build`. Local builds may be unsigned or ad-hoc signed; the release workflow supplies the configured Developer ID identity.
 5. Verify the application bundle with `codesign --verify --deep --strict --verbose=2` and inspect it with `spctl --assess --type execute --verbose=2`.
 6. Run `./scripts/check-release.sh` to validate package-version alignment and changelog structure.
-7. Public releases are built by `.github/workflows/macos-release.yml`. The workflow imports the Developer ID certificate into an ephemeral keychain, validates notarisation access, runs the release gates, asks Tauri to sign and notarise, verifies the hardened-runtime signature and stapled tickets, creates the GitHub Release, and publishes the DMG plus its SHA-256 checksum.
+7. Public releases are built by `.github/workflows/macos-release.yml`. The workflow imports the Developer ID certificate into an ephemeral keychain, validates notarisation access, runs the release gates, asks Tauri to sign and notarise, verifies the hardened-runtime signature and stapled tickets, publishes the Rust crate to crates.io, creates the GitHub Release, and publishes the DMG plus its SHA-256 checksum.
 8. Confirm the release also contains `Worthweave.app.tar.gz`, its `.sig` file, and `latest.json`. An installed app verifies the archive against the public key embedded in `tauri.conf.json` before installation.
 
 ## GitHub configuration
@@ -45,6 +45,7 @@ Configure these repository secrets with the same values and encoding used by the
 - `APPLE_ID`: Apple developer account email used by `notarytool`.
 - `APPLE_PASSWORD`: app-specific password for that Apple ID.
 - `TAURI_SIGNING_PRIVATE_KEY`: dedicated private key used only to sign in-app updater archives. The current recovery copy is stored at `~/.tauri/worthweave-updater.key` with owner-only permissions and must be backed up securely. Losing it prevents existing installations from trusting future updates.
+- `CARGO_REGISTRY_TOKEN`: crates.io API token permitted to publish new versions of the `worthweave` crate.
 
 Configure these as repository variables where possible (secrets are also accepted for compatibility with the existing Maabarium setup):
 

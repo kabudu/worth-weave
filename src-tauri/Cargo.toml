@@ -6,6 +6,8 @@ authors = ["Worthweave contributors"]
 edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
+repository = "https://github.com/kabudu/worth-weave"
+homepage = "https://github.com/kabudu/worth-weave"
 
 [lib]
 name = "worthweave_lib"

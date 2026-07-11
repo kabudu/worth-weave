@@ -113,7 +113,7 @@ Create local `.app` and `.dmg` bundles with:
 frontend/node_modules/.bin/tauri build
 ```
 
-Pushing a changelog-backed `vMAJOR.MINOR.PATCH` tag runs `.github/workflows/macos-release.yml`. It imports the Developer ID certificate into an ephemeral keychain, runs the release gates, signs and notarises the application, verifies Gatekeeper and stapled tickets, creates the GitHub Release from the matching changelog section, and publishes the DMG with its SHA-256 checksum. It also publishes a separately signed updater archive and manifest used by Worthweave’s in-app update prompt.
+Pushing a changelog-backed `vMAJOR.MINOR.PATCH` tag runs `.github/workflows/macos-release.yml`. It imports the Developer ID certificate into an ephemeral keychain, runs the release gates, signs and notarises the application, verifies Gatekeeper and stapled tickets, publishes the matching Rust crate to crates.io, creates the GitHub Release from the matching changelog section, and publishes the DMG with its SHA-256 checksum. It also publishes a separately signed updater archive and manifest used by Worthweave’s in-app update prompt.
 
 See the [release process](docs/release.md) for required GitHub secrets and variables.
 

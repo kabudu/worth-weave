@@ -263,3 +263,33 @@ footer { font-size:10px; }
   .currency-submit { margin-top:12px; }
   .onboarding-trust { padding-top:16px; }
 }
+
+/* Balanced report spacing and truly centred application dialogs. */
+.settings-dialog { position:fixed;inset:0;margin:auto;width:min(720px,calc(100vw - 48px));max-height:min(820px,calc(100vh - 48px)); }
+.settings-content { gap:36px;padding:30px 32px; }
+.report-page { width:100%;max-width:1440px;margin:0 auto;padding:clamp(34px,5vh,50px) 0 56px; }
+.report-page>header h1 { margin:7px 0 10px;line-height:1.04; }
+.report-page>header:not(.report-title-row) { margin-bottom:30px; }
+.report-page>header>p { margin:0;line-height:1.55; }
+.report-title-row { align-items:flex-start;gap:48px;margin-bottom:28px; }
+.report-title-row>div:first-child { max-width:900px; }
+.report-title-row p { margin:14px 0 0;color:#53635b;font-size:11px;line-height:1.55; }
+.valuation-total { flex:none;padding:5px 0 0; }
+.insights-page { max-width:1180px; }
+.insights-page>header { max-width:860px; }
+.insights-page .insight-card { padding:28px; }
+.ai-setup-status,.ai-setup-success { display:block;margin-top:10px;font-size:10px;line-height:1.5; }
+.ai-setup-status { color:#6b593c; }.ai-setup-success { color:#176044;font-weight:650; }
+
+.about-dialog { position:fixed;inset:0;margin:auto;width:min(680px,calc(100vw - 48px));max-height:calc(100vh - 48px);padding:0;border:0;border-radius:28px;background:#f6f7f2;color:var(--ink);overflow:hidden;box-shadow:0 40px 120px rgba(2,20,15,.42); }
+.about-dialog::backdrop { background:rgba(4,18,15,.68);backdrop-filter:blur(10px); }
+.about-close { position:absolute;z-index:2;right:22px;top:22px;background:rgba(255,255,255,.88); }
+.about-hero { position:relative;padding:46px 48px 36px;background:linear-gradient(145deg,#08261e,#10533f);color:white;overflow:hidden; }
+.about-hero::after { content:"";position:absolute;width:300px;height:300px;border-radius:50%;right:-120px;top:-150px;background:rgba(137,226,179,.13); }
+.about-mark { width:56px;height:56px;display:flex;align-items:end;gap:5px;margin-bottom:26px;padding:11px;border-radius:17px;background:rgba(151,229,187,.12);transform:skew(-7deg); }
+.about-mark span { width:9px;border-radius:5px 5px 2px 2px;background:#9de3bf; }.about-mark span:nth-child(1){height:16px;opacity:.55}.about-mark span:nth-child(2){height:25px;opacity:.8}.about-mark span:nth-child(3){height:34px}
+.about-hero .section-kicker { color:#9de3bf; }.about-hero h2 { position:relative;margin:8px 0 14px;font:600 clamp(28px,4vw,40px)/1.08 "Manrope Variable";letter-spacing:-1.7px; }.about-hero h2 em { font-style:normal;color:#a8bdb5;font-weight:450; }.about-hero>p { position:relative;max-width:500px;margin:0;color:#bad0c7;font-size:12px;line-height:1.65; }
+.about-details { padding:26px 48px 30px; }.about-facts { display:grid;grid-template-columns:repeat(3,1fr);gap:12px; }.about-facts span { padding:12px;border:1px solid var(--line);border-radius:12px;color:#365047;font-size:11px; }.about-facts strong { display:block;margin-bottom:4px;color:#718078;font-size:8px;text-transform:uppercase;letter-spacing:.8px; }
+.about-promise { display:flex;gap:13px;align-items:center;margin:18px 0;padding:15px;border-radius:14px;background:#e4f1e8; }.about-promise>span { flex:none;width:34px;height:34px;display:grid;place-items:center;border-radius:10px;background:#155b46;color:#a9e7c3; }.about-promise strong { font-size:12px; }.about-promise p { margin:3px 0 0;color:#526b61;font-size:10px;line-height:1.5; }
+.about-brokers { display:flex;flex-wrap:wrap;gap:7px; }.about-brokers span { padding:6px 9px;border:1px solid var(--line);border-radius:999px;color:#53635b;font-size:9px; }.about-note { margin:17px 0;color:#718078;font-size:9px;line-height:1.55; }.about-done { width:100%;padding:12px; }
+@media (max-width:600px) { .report-title-row{display:grid;gap:18px}.valuation-total{text-align:left}.about-hero,.about-details{padding-left:24px;padding-right:24px}.about-facts{grid-template-columns:1fr}.about-dialog,.settings-dialog{width:calc(100vw - 24px);max-height:calc(100vh - 24px)} }

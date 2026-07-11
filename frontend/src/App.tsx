@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
@@ -9,6 +11,7 @@ import { ImportDialog } from "./ImportDialog";
 import { InsightsCard } from "./InsightsCard";
 import { ActivityView, IncomeView, PortfolioView } from "./ReportingViews";
 import { UpdateBanner } from "./UpdateBanner";
+import { AboutDialog } from "./AboutDialog";
 
 const navItems = [
   ["Overview", "⌁"],
@@ -45,6 +48,12 @@ export function App() {
   const [activeView, setActiveView] = useState("Overview");
   const [importOpen, setImportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen("open-about-worthweave", () => setAboutOpen(true));
+    return () => { void unlisten.then((dispose) => dispose()); };
+  }, []);
   const settings = useQuery({
     queryKey: ["settings"],
     queryFn: ({ signal }) => getSettings(signal),
@@ -186,6 +195,7 @@ export function App() {
         <footer><span>Worthweave · Your data stays here</span><span>Figures calculated by Worthweave <i /> {settings.data.ai_runtime ? "Private AI ready" : "Private AI optional"}</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
         <SettingsDialog currencies={currencies.data} currentCurrency={reportingCurrency} aiRuntime={settings.data.ai_runtime} aiModel={settings.data.ai_model} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
       </main>
     </div>
   );

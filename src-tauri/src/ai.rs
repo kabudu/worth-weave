@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -16,11 +17,36 @@ fn memory_gib() -> u64 {
         .unwrap_or(0)
 }
 
+fn command_path(command: &str) -> Option<PathBuf> {
+    let mut candidates = vec![
+        PathBuf::from("/opt/homebrew/bin").join(command),
+        PathBuf::from("/usr/local/bin").join(command),
+        PathBuf::from("/usr/bin").join(command),
+    ];
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        candidates.insert(0, home.join(".local/bin").join(command));
+        candidates.insert(1, home.join(".cargo/bin").join(command));
+    }
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .or_else(|| {
+            Command::new("/usr/bin/which")
+                .arg(command)
+                .output()
+                .ok()
+                .and_then(|output| {
+                    output
+                        .status
+                        .success()
+                        .then(|| PathBuf::from(String::from_utf8_lossy(&output.stdout).trim()))
+                })
+        })
+}
+
 fn available(command: &str) -> bool {
-    Command::new("/usr/bin/which")
-        .arg(command)
-        .output()
-        .is_ok_and(|output| output.status.success())
+    command_path(command).is_some()
 }
 
 pub fn recommendation() -> AiRecommendation {
@@ -63,7 +89,12 @@ pub fn install(recommendation: &AiRecommendation) -> Result<()> {
                 "Rapid-MLX setup requires the uv package manager".into(),
             ));
         }
-        let install = Command::new("uv")
+        let uv = command_path("uv").ok_or_else(|| {
+            WorthweaveError::InvalidSettings(
+                "Rapid-MLX setup requires uv. Install uv, then try again.".into(),
+            )
+        })?;
+        let install = Command::new(&uv)
             .args(["tool", "install", "--force", "rapid-mlx==0.10.7"])
             .status()?;
         if !install.success() {
@@ -71,7 +102,7 @@ pub fn install(recommendation: &AiRecommendation) -> Result<()> {
                 "Rapid-MLX installation failed".into(),
             ));
         }
-        let pull = Command::new("uv")
+        let pull = Command::new(&uv)
             .args([
                 "tool",
                 "run",
@@ -93,7 +124,12 @@ pub fn install(recommendation: &AiRecommendation) -> Result<()> {
                 "install Ollama from its official macOS application first".into(),
             ));
         }
-        let pull = Command::new("ollama")
+        let ollama = command_path("ollama").ok_or_else(|| {
+            WorthweaveError::InvalidSettings(
+                "Install Ollama from its official macOS application, then try again.".into(),
+            )
+        })?;
+        let pull = Command::new(ollama)
             .args(["pull", &recommendation.model])
             .status()?;
         if !pull.success() {
@@ -156,7 +192,12 @@ fn start_runtime(runtime: &str, model: &str) -> Result<()> {
         ));
     }
     let mut command = if runtime == "rapid-mlx" {
-        let mut command = Command::new("uv");
+        let uv = command_path("uv").ok_or_else(|| {
+            WorthweaveError::LocalAi(
+                "uv could not be found. Set up private AI again in Settings.".into(),
+            )
+        })?;
+        let mut command = Command::new(uv);
         command.args([
             "tool",
             "run",
@@ -168,7 +209,12 @@ fn start_runtime(runtime: &str, model: &str) -> Result<()> {
         ]);
         command
     } else if runtime == "ollama" {
-        let mut command = Command::new("ollama");
+        let ollama = command_path("ollama").ok_or_else(|| {
+            WorthweaveError::LocalAi(
+                "Ollama could not be found. Set up private AI again in Settings.".into(),
+            )
+        })?;
+        let mut command = Command::new(ollama);
         command.arg("serve");
         command
     } else {

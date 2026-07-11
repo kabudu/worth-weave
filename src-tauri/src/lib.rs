@@ -16,7 +16,7 @@ use models::{
     ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput, TotalReturnAttribution,
     UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
 };
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 fn with_connection<T>(
     state: &State<'_, AppState>,
@@ -248,6 +248,40 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{MenuBuilder, SubmenuBuilder};
+                let application = SubmenuBuilder::new(app, "Worthweave")
+                    .text("about-worthweave", "About Worthweave")
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .separator()
+                    .quit()
+                    .build()?;
+                let edit = SubmenuBuilder::new(app, "Edit")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .select_all()
+                    .build()?;
+                let window = SubmenuBuilder::new(app, "Window")
+                    .minimize()
+                    .maximize()
+                    .fullscreen()
+                    .separator()
+                    .close_window()
+                    .build()?;
+                let menu = MenuBuilder::new(app)
+                    .items(&[&application, &edit, &window])
+                    .build()?;
+                app.set_menu(menu)?;
+            }
             let data_dir = app
                 .path()
                 .app_local_data_dir()
@@ -263,6 +297,11 @@ pub fn run() {
                 connection: std::sync::Mutex::new(connection),
             });
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "about-worthweave" {
+                let _ = app.emit("open-about-worthweave", ());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             portfolio_summary,

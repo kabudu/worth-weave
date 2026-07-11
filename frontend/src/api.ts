@@ -92,6 +92,15 @@ const valuationSummarySchema = z.object({
     reporting_cost_basis: exactString.nullable(), gain_loss: exactString.nullable(),
   })),
 });
+const totalReturnAttributionSchema = z.object({
+  reporting_currency: z.string().regex(/^[A-Z]{3}$/),
+  coverage_start: z.string().nullable(), coverage_end: z.string().nullable(),
+  status: z.enum(["complete", "partial", "unavailable"]),
+  realized_gain_loss: exactString.nullable(), unrealized_gain_loss: exactString.nullable(),
+  dividends: exactString.nullable(), interest: exactString.nullable(), fees: exactString.nullable(),
+  taxes: exactString.nullable(), fx_impact: exactString.nullable(), attributed_subtotal: exactString.nullable(),
+  total_return: exactString.nullable(), notes: z.array(z.string()),
+});
 const portfolioSnapshotSchema = z.object({
   id: z.string().uuid(), captured_at: z.string(), reporting_currency: z.string(), total_value: exactString,
 });
@@ -115,6 +124,7 @@ export type ActivityEvent = z.infer<typeof activityEventSchema>;
 export type Holding = z.infer<typeof holdingSchema>;
 export type IncomeSummary = z.infer<typeof incomeSummarySchema>;
 export type ValuationSummary = z.infer<typeof valuationSummarySchema>;
+export type TotalReturnAttribution = z.infer<typeof totalReturnAttributionSchema>;
 export type PortfolioSnapshot = z.infer<typeof portfolioSnapshotSchema>;
 export type AllocationReport = z.infer<typeof allocationReportSchema>;
 export type ReconciliationItem = z.infer<typeof reconciliationItemSchema>;
@@ -200,6 +210,11 @@ export async function getIncomeSummary(signal?: AbortSignal): Promise<IncomeSumm
 export async function getPortfolioValuation(signal?: AbortSignal): Promise<ValuationSummary> {
   signal?.throwIfAborted();
   return valuationSummarySchema.parse(await invoke("portfolio_valuation"));
+}
+
+export async function getTotalReturnAttribution(signal?: AbortSignal): Promise<TotalReturnAttribution> {
+  signal?.throwIfAborted();
+  return totalReturnAttributionSchema.parse(await invoke("portfolio_total_return"));
 }
 
 export async function setMarketPrice(input: { instrument_id: string; price: string; currency: string }) {

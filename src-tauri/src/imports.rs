@@ -138,6 +138,8 @@ fn action_type(action: &str) -> &'static str {
         "buy"
     } else if action.contains("sell") {
         "sell"
+    } else if action.contains("tax") || action.contains("withholding") {
+        "tax"
     } else if action.contains("dividend") {
         "dividend"
     } else if action == "deposit" {
@@ -310,7 +312,14 @@ fn ibkr_type(section: &str, row: &HashMap<String, String>) -> &'static str {
         return "transfer";
     }
     if section == "transaction_fees" {
-        return "fee";
+        return if row
+            .get("TaxDescription")
+            .is_some_and(|value| !value.trim().is_empty())
+        {
+            "tax"
+        } else {
+            "fee"
+        };
     }
     let label = format!(
         "{} {}",
@@ -318,7 +327,9 @@ fn ibkr_type(section: &str, row: &HashMap<String, String>) -> &'static str {
         row.get("Description").map_or("", String::as_str)
     )
     .to_lowercase();
-    if label.contains("dividend") {
+    if label.contains("tax") || label.contains("withholding") {
+        "tax"
+    } else if label.contains("dividend") {
         "dividend"
     } else if label.contains("deposit") {
         "deposit"
@@ -434,13 +445,20 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
         let source = raw_id
             .cloned()
             .unwrap_or_else(|| stable_id("ibkr", &values));
-        let amount_raw = ["Amount", "NetCash", "CashTransfer", "TaxAmount", "CommTax"]
-            .iter()
-            .find_map(|field| {
-                row.get(*field)
-                    .filter(|value| !value.trim().is_empty())
-                    .map(String::as_str)
-            });
+        let amount_raw = [
+            "Amount",
+            "TradeMoney",
+            "NetCash",
+            "CashTransfer",
+            "TaxAmount",
+            "CommTax",
+        ]
+        .iter()
+        .find_map(|field| {
+            row.get(*field)
+                .filter(|value| !value.trim().is_empty())
+                .map(String::as_str)
+        });
         let currency = row
             .get("CurrencyPrimary")
             .filter(|value| !value.is_empty())
@@ -669,7 +687,28 @@ mod tests {
         let parsed = parse_ibkr(b"ClientAccountID,CurrencyPrimary,AccountType,DateOpened\nU1,GBP,Individual,2024-03-15\nClientAccountID,CurrencyPrimary,TradeID,Buy/Sell,TradeMoney,Date/Time,Quantity,NetCash,Description,ISIN\nU1,GBP,T1,BUY,100.00,2024-03-19;10:30:00,2,-101.00,Example,GB00TEST0001\n").expect("valid flex export");
         assert_eq!(parsed.events.len(), 1);
         assert_eq!(parsed.events[0].event_type, "buy");
+        assert_eq!(
+            parsed.events[0].amount,
+            Some(ExactValue {
+                coefficient: "10000".into(),
+                scale: 2
+            })
+        );
         assert_eq!(parsed.start.to_string(), "2024-03-15");
+    }
+
+    #[test]
+    fn ibkr_parser_distinguishes_tax_from_fees() {
+        let parsed = parse_ibkr(b"ClientAccountID,CurrencyPrimary,TaxDescription,TaxAmount,TradeID,Date\nU1,GBP,UK stamp duty,-2.50,T1,2026-07-01\n").expect("valid tax export");
+        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events[0].event_type, "tax");
+        assert_eq!(
+            parsed.events[0].amount,
+            Some(ExactValue {
+                coefficient: "-250".into(),
+                scale: 2
+            })
+        );
     }
 
     #[test]

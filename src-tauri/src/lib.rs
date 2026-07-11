@@ -13,7 +13,7 @@ use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
     CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, Holding, ImportResult,
     IncomeSummary, PortfolioExplanation, PortfolioSnapshot, PortfolioSummary, PriceQuote,
-    ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput,
+    ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput, TotalReturnAttribution,
     UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Manager, State};
@@ -115,6 +115,7 @@ async fn explain_portfolio(
         })?;
         let analytics = serde_json::json!({
             "valuation": market::valuation(connection)?,
+            "total_return_attribution": market::total_return_attribution(connection)?,
             "allocation": market::allocation(connection).ok(),
             "reconciliation": projections::reconciliation(connection)?,
             "income": projections::income(connection)?,
@@ -170,6 +171,13 @@ fn update_instrument_metadata(
 #[tauri::command]
 fn portfolio_valuation(state: State<'_, AppState>) -> Result<ValuationSummary> {
     with_connection(&state, |connection| market::valuation(connection))
+}
+
+#[tauri::command]
+fn portfolio_total_return(state: State<'_, AppState>) -> Result<TotalReturnAttribution> {
+    with_connection(&state, |connection| {
+        market::total_return_attribution(connection)
+    })
 }
 
 #[tauri::command]
@@ -273,6 +281,7 @@ pub fn run() {
             set_fx_rate,
             update_instrument_metadata,
             portfolio_valuation,
+            portfolio_total_return,
             capture_portfolio_snapshot,
             list_portfolio_snapshots,
             portfolio_allocation,
@@ -522,6 +531,36 @@ mod tests {
         assert_eq!(valuation.stale_fx_count, 0);
         assert_eq!(valuation.total_gain_loss.as_deref(), Some("36"));
         assert_eq!(valuation.holdings[0].gain_loss.as_deref(), Some("36"));
+        let fx_partial = market::total_return_attribution(&connection).expect("FX attribution");
+        assert_eq!(fx_partial.status, "partial");
+        assert_eq!(fx_partial.realized_gain_loss.as_deref(), Some("20"));
+        assert_eq!(fx_partial.unrealized_gain_loss.as_deref(), Some("36"));
+        assert_eq!(fx_partial.dividends.as_deref(), Some("5"));
+        assert_eq!(fx_partial.attributed_subtotal.as_deref(), Some("61"));
+        assert!(fx_partial.fx_impact.is_none());
+        assert!(fx_partial.total_return.is_none());
+
+        market::set_price(
+            &connection,
+            &SetPriceInput {
+                instrument_id: "GB00TEST0001".into(),
+                price: "16".into(),
+                currency: "GBP".into(),
+            },
+        )
+        .expect("GBP price");
+        let attribution = market::total_return_attribution(&connection).expect("attribution");
+        assert_eq!(attribution.status, "complete");
+        assert_eq!(attribution.coverage_start.as_deref(), Some("2026-01-01"));
+        assert_eq!(attribution.coverage_end.as_deref(), Some("2026-03-01"));
+        assert_eq!(attribution.realized_gain_loss.as_deref(), Some("20"));
+        assert_eq!(attribution.unrealized_gain_loss.as_deref(), Some("36"));
+        assert_eq!(attribution.dividends.as_deref(), Some("5"));
+        assert_eq!(attribution.interest.as_deref(), Some("0"));
+        assert_eq!(attribution.fees.as_deref(), Some("0"));
+        assert_eq!(attribution.taxes.as_deref(), Some("0"));
+        assert_eq!(attribution.fx_impact.as_deref(), Some("0"));
+        assert_eq!(attribution.total_return.as_deref(), Some("61"));
         let snapshot = market::capture_snapshot(&connection).expect("snapshot");
         assert_eq!(snapshot.total_value, "96");
         assert_eq!(market::snapshots(&connection).expect("snapshots").len(), 1);

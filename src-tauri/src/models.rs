@@ -205,6 +205,24 @@ pub struct ValuationSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct TotalReturnAttribution {
+    pub reporting_currency: String,
+    pub coverage_start: Option<String>,
+    pub coverage_end: Option<String>,
+    pub status: &'static str,
+    pub realized_gain_loss: Option<String>,
+    pub unrealized_gain_loss: Option<String>,
+    pub dividends: Option<String>,
+    pub interest: Option<String>,
+    pub fees: Option<String>,
+    pub taxes: Option<String>,
+    pub fx_impact: Option<String>,
+    pub attributed_subtotal: Option<String>,
+    pub total_return: Option<String>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct PortfolioSnapshot {
     pub id: String,
     pub captured_at: String,

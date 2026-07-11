@@ -8,7 +8,7 @@ use crate::db;
 use crate::error::{LedgerlyError, Result};
 use crate::models::{
     AllocationReport, AllocationSlice, FxRate, PortfolioSnapshot, PriceQuote, SetFxRateInput,
-    SetPriceInput, ValuationSummary, ValuedHolding,
+    SetPriceInput, TotalReturnAttribution, ValuationSummary, ValuedHolding,
 };
 use crate::projections;
 use std::collections::BTreeMap;
@@ -251,6 +251,216 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
         stale_fx_count,
         total_gain_loss: gain_complete.then(|| total_gain.normalize().to_string()),
         holdings: valued,
+    })
+}
+
+#[derive(Default)]
+struct AttributionPosition {
+    quantity: Decimal,
+    cost_basis: Decimal,
+    complete: bool,
+}
+
+fn add_converted(
+    connection: &Connection,
+    total: &mut Decimal,
+    value: Decimal,
+    currency: &str,
+    reporting_currency: &str,
+) -> Result<bool> {
+    if let Some((rate, _)) = fx(connection, currency, reporting_currency)? {
+        *total += value * rate;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+fn from_optional_parts(coefficient: Option<String>, scale: Option<u32>) -> Result<Option<Decimal>> {
+    coefficient
+        .zip(scale)
+        .map(|(coefficient, scale)| from_parts(coefficient, scale))
+        .transpose()
+}
+
+pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAttribution> {
+    let reporting_currency = db::settings(connection)?
+        .reporting_currency
+        .unwrap_or_else(|| "GBP".into());
+    let valuation = valuation(connection)?;
+    let coverage: (Option<String>, Option<String>) = connection.query_row(
+        "SELECT MIN(coverage_start), MAX(coverage_end) FROM import_batches",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let mut statement = connection.prepare(
+        "SELECT account_id, instrument_id, event_type, amount_coefficient, amount_scale,
+                currency, quantity_coefficient, quantity_scale
+         FROM events ORDER BY occurred_at, id",
+    )?;
+    let mut rows = statement.query([])?;
+    let mut positions: BTreeMap<(String, String, String), AttributionPosition> = BTreeMap::new();
+    let mut realized = Decimal::ZERO;
+    let mut dividends = Decimal::ZERO;
+    let mut interest = Decimal::ZERO;
+    let mut fees = Decimal::ZERO;
+    let mut taxes = Decimal::ZERO;
+    let mut realized_complete = true;
+    let mut cash_complete = true;
+    let mut unclassified_event_count = 0usize;
+    let mut foreign_activity = valuation.holdings.iter().any(|item| {
+        item.price
+            .as_ref()
+            .is_some_and(|price| price.currency != reporting_currency)
+            || item
+                .holding
+                .currency
+                .as_ref()
+                .is_some_and(|currency| currency != &reporting_currency)
+    });
+
+    while let Some(row) = rows.next()? {
+        let event_type: String = row.get(2)?;
+        let amount = from_optional_parts(row.get(3)?, row.get(4)?)?.map(|value| value.abs());
+        let currency: Option<String> = row.get(5)?;
+        if currency
+            .as_deref()
+            .is_some_and(|value| value != reporting_currency)
+        {
+            foreign_activity = true;
+        }
+        if matches!(event_type.as_str(), "buy" | "sell") {
+            let (Some(instrument_id), Some(currency), Some(amount), Some(quantity)) = (
+                row.get::<_, Option<String>>(1)?,
+                currency,
+                amount,
+                from_optional_parts(row.get(6)?, row.get(7)?)?.map(|value| value.abs()),
+            ) else {
+                realized_complete = false;
+                continue;
+            };
+            let account_id: String = row.get(0)?;
+            if quantity.is_zero() {
+                realized_complete = false;
+                continue;
+            }
+            let position = positions
+                .entry((account_id, instrument_id, currency.clone()))
+                .or_insert_with(|| AttributionPosition {
+                    complete: true,
+                    ..Default::default()
+                });
+            if event_type == "buy" {
+                position.quantity += quantity;
+                position.cost_basis += amount;
+            } else if quantity > position.quantity || !position.complete {
+                position.complete = false;
+                realized_complete = false;
+            } else {
+                let disposed_basis = position.cost_basis / position.quantity * quantity;
+                if !add_converted(
+                    connection,
+                    &mut realized,
+                    amount - disposed_basis,
+                    &currency,
+                    &reporting_currency,
+                )? {
+                    realized_complete = false;
+                }
+                position.quantity -= quantity;
+                position.cost_basis -= disposed_basis;
+            }
+            continue;
+        }
+        if event_type == "corporate_action"
+            || (event_type == "transfer" && row.get::<_, Option<String>>(1)?.is_some())
+            || (event_type == "other" && amount.is_some())
+        {
+            unclassified_event_count += 1;
+            if event_type != "other" {
+                realized_complete = false;
+            } else {
+                cash_complete = false;
+            }
+            continue;
+        }
+        if !matches!(event_type.as_str(), "dividend" | "interest" | "fee" | "tax") {
+            continue;
+        }
+        let (Some(amount), Some(currency)) = (amount, currency) else {
+            cash_complete = false;
+            continue;
+        };
+        let target = match event_type.as_str() {
+            "dividend" => &mut dividends,
+            "interest" => &mut interest,
+            "fee" => &mut fees,
+            "tax" => &mut taxes,
+            _ => unreachable!(),
+        };
+        if !add_converted(connection, target, amount, &currency, &reporting_currency)? {
+            cash_complete = false;
+        }
+    }
+
+    let unrealized = valuation
+        .total_gain_loss
+        .as_deref()
+        .and_then(|value| Decimal::from_str(value).ok());
+    let components_complete = realized_complete && cash_complete && unrealized.is_some();
+    let subtotal = components_complete
+        .then(|| realized + unrealized.unwrap_or_default() + dividends + interest - fees - taxes);
+    let fx_complete = !foreign_activity;
+    let total_return = (components_complete && fx_complete).then(|| subtotal.unwrap_or_default());
+    let mut notes = Vec::new();
+    if coverage.0.is_none() {
+        notes.push("Import broker history to calculate return attribution.".into());
+    }
+    if !realized_complete {
+        notes.push("Realised gains are unavailable where transaction history, quantities, amounts, or exchange rates are incomplete.".into());
+    }
+    if unrealized.is_none() {
+        notes.push("Unrealised gains require complete cost basis, current prices, and exchange rates for every open holding.".into());
+    }
+    if !cash_complete {
+        notes.push(
+            "Some income, fee, or tax events could not be converted into the reporting currency."
+                .into(),
+        );
+    }
+    if unclassified_event_count > 0 {
+        notes.push(format!(
+            "{unclassified_event_count} corporate action, in-kind transfer, or unclassified cash event(s) require review before attribution can be complete."
+        ));
+    }
+    if foreign_activity {
+        notes.push("Foreign-currency components use the latest available FX rate. True FX attribution requires transaction-date rates, so total return is withheld.".into());
+    }
+    if coverage.0.is_some() {
+        notes.push("Results cover imported history only; earlier activity can change cost basis and realised returns.".into());
+    }
+    let status = if coverage.0.is_none() {
+        "unavailable"
+    } else if total_return.is_some() {
+        "complete"
+    } else {
+        "partial"
+    };
+    Ok(TotalReturnAttribution {
+        reporting_currency,
+        coverage_start: coverage.0,
+        coverage_end: coverage.1,
+        status,
+        realized_gain_loss: realized_complete.then(|| realized.normalize().to_string()),
+        unrealized_gain_loss: unrealized.map(|value| value.normalize().to_string()),
+        dividends: cash_complete.then(|| dividends.normalize().to_string()),
+        interest: cash_complete.then(|| interest.normalize().to_string()),
+        fees: cash_complete.then(|| fees.normalize().to_string()),
+        taxes: cash_complete.then(|| taxes.normalize().to_string()),
+        fx_impact: fx_complete.then(|| "0".into()),
+        attributed_subtotal: subtotal.map(|value| value.normalize().to_string()),
+        total_return: total_return.map(|value| value.normalize().to_string()),
+        notes,
     })
 }
 

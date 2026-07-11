@@ -34,6 +34,12 @@ function mockNativeCommands(onboardingComplete: boolean, aiOnboardingComplete = 
       missing_fx_count: 0, stale_price_count: 0, stale_fx_count: 0,
       total_gain_loss: null, holdings: [],
     };
+    if (command === "portfolio_total_return") return {
+      reporting_currency: "GBP", coverage_start: null, coverage_end: null, status: "unavailable",
+      realized_gain_loss: null, unrealized_gain_loss: null, dividends: null, interest: null,
+      fees: null, taxes: null, fx_impact: null, attributed_subtotal: null, total_return: null,
+      notes: ["Import broker history to calculate return attribution."],
+    };
     if (command === "portfolio_allocation") return { reporting_currency: "GBP", by_account: [], by_currency: [], by_platform: [], by_asset_class: [], by_sector: [], by_geography: [] };
     if (command === "update_settings") return {
       reporting_currency: "GBP",
@@ -73,6 +79,8 @@ test("renders truthful empty portfolio state", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Portfolio" }));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_holdings"));
+  expect(await screen.findByRole("heading", { name: /what shaped your return/i })).toBeInTheDocument();
+  expect(screen.getByText(/import broker history to calculate return attribution/i)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Overview" }));
 
   fireEvent.click(screen.getByRole("button", { name: /import data/i }));

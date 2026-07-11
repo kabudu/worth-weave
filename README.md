@@ -20,6 +20,7 @@ Financial results come from deterministic Rust code using exact decimal represen
 - Exact quantities, cost basis, average cost, value, and gain/loss calculations.
 - Allocation by broker, account, asset class, sector, geography, and source currency.
 - Transaction, dividend, interest, and valuation-snapshot history.
+- True total-return attribution across realised and unrealised gains, dividends, interest, fees, and taxes, with explicit data-completeness diagnostics.
 - Position comparison against the latest broker-reported holdings.
 - Configurable reporting currency without rewriting source transactions.
 - Human-readable JSON export plus encrypted, versioned backup and restore.

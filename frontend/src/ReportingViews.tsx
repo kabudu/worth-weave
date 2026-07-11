@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { capturePortfolioSnapshot, type ActivityEvent, type AllocationReport, type CurrencyOption, type Holding, type IncomeSummary, type PortfolioSnapshot, type ReconciliationItem, type ValuationSummary } from "./api";
+import { capturePortfolioSnapshot, type ActivityEvent, type AllocationReport, type CurrencyOption, type Holding, type IncomeSummary, type PortfolioSnapshot, type ReconciliationItem, type TotalReturnAttribution, type ValuationSummary } from "./api";
 import { MarketDataDialog } from "./MarketDataDialog";
 
 function money(value: string | null, currency: string | null) {
@@ -20,6 +20,7 @@ function EmptyState({ title, copy }: { title: string; copy: string }) {
 type PortfolioProps = {
   holdings: Holding[];
   valuation?: ValuationSummary;
+  attribution?: TotalReturnAttribution;
   allocation?: AllocationReport;
   snapshots: PortfolioSnapshot[];
   currencies: CurrencyOption[];
@@ -27,7 +28,7 @@ type PortfolioProps = {
   reconciliation: ReconciliationItem[];
 };
 
-export function PortfolioView({ holdings, valuation, allocation, snapshots, currencies, reportingCurrency, reconciliation }: PortfolioProps) {
+export function PortfolioView({ holdings, valuation, attribution, allocation, snapshots, currencies, reportingCurrency, reconciliation }: PortfolioProps) {
   const [marketOpen, setMarketOpen] = useState(false);
   const queryClient = useQueryClient();
   const snapshotMutation = useMutation({ mutationFn: capturePortfolioSnapshot, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["snapshots"] }) });
@@ -42,6 +43,7 @@ export function PortfolioView({ holdings, valuation, allocation, snapshots, curr
     : null;
   return <section className="report-page">
     <header className="report-title-row"><div><span className="section-kicker">Calculated from your records</span><h1>Your holdings</h1><p>Quantities and average cost are rebuilt from your imported broker history.</p></div><div className="valuation-total"><span>Portfolio value · {reportingCurrency}</span><strong>{money(valuation?.total_value ?? null, reportingCurrency)}</strong>{valuation && !valuation.total_value && <small>{valuation.missing_price_count} prices · {valuation.missing_fx_count} exchange rates missing</small>}<button type="button" onClick={() => setMarketOpen(true)}>Update market data</button></div></header>
+    {attribution && <AttributionPanel report={attribution} />}
     {holdings.length === 0 ? <EmptyState title="No open holdings yet" copy="Import transaction history to reconstruct your positions." /> : <><div className="report-table-wrap"><table><thead><tr><th>Instrument</th><th>Account</th><th>Quantity</th><th>Average cost</th><th>Cost basis</th><th>Market value</th><th>{reportingCurrency} value</th><th>Gain / loss</th></tr></thead><tbody>{holdings.map((holding) => {
       const item = valued.get(`${holding.account_id}-${holding.instrument_id}-${holding.currency}`);
       return <tr key={`${holding.account_id}-${holding.instrument_id}-${holding.currency}`}><td><strong>{holding.symbol ?? holding.instrument_id}</strong><small>{holding.name ?? `${brokerName(holding.broker)} · ${holding.instrument_id}`}{item?.price?.stale ? " · stale price" : ""}</small></td><td>{holding.account_name}</td><td className="number">{holding.quantity}</td><td className="number">{holding.cost_basis_complete ? money(holding.average_cost, holding.currency) : <span className="basis-warning">Incomplete history</span>}</td><td className="number">{holding.cost_basis_complete ? money(holding.cost_basis, holding.currency) : "—"}</td><td className="number">{money(item?.market_value ?? null, item?.price?.currency ?? null)}</td><td className="number">{money(item?.reporting_value ?? null, reportingCurrency)}</td><td className="number">{money(item?.gain_loss ?? null, reportingCurrency)}</td></tr>;
@@ -49,6 +51,24 @@ export function PortfolioView({ holdings, valuation, allocation, snapshots, curr
     <ReconciliationPanel items={reconciliation} />
     {historyChange !== null && <p className="history-change">Historical change since {firstSnapshot?.captured_at.slice(0, 10)}: <strong>{money(String(historyChange), reportingCurrency)}</strong></p>}
     <MarketDataDialog open={marketOpen} onClose={() => setMarketOpen(false)} holdings={holdings} currencies={currencies} reportingCurrency={reportingCurrency} />
+  </section>;
+}
+
+function AttributionPanel({ report }: { report: TotalReturnAttribution }) {
+  const components = [
+    ["Realised gains", report.realized_gain_loss, false],
+    ["Unrealised gains", report.unrealized_gain_loss, false],
+    ["Dividends", report.dividends, false],
+    ["Interest", report.interest, false],
+    ["Fees", report.fees, true],
+    ["Taxes", report.taxes, true],
+    ["Currency movement", report.fx_impact, false],
+  ] as const;
+  const headline = report.total_return ?? report.attributed_subtotal;
+  return <section className="attribution-card" aria-labelledby="attribution-title">
+    <div className="attribution-heading"><div><span className="section-kicker">True total return</span><h2 id="attribution-title">What shaped your return</h2><p>{report.coverage_start && report.coverage_end ? `${report.coverage_start} to ${report.coverage_end}` : "Awaiting imported history"} · {report.reporting_currency}</p></div><div className={`attribution-total ${report.status}`}><span>{report.total_return ? "Total return" : "Attributed so far"}</span><strong>{money(headline, report.reporting_currency)}</strong><small>{report.status === "complete" ? "Complete for imported period" : report.status === "partial" ? "Some attribution is unavailable" : "Not yet available"}</small></div></div>
+    <div className="attribution-components">{components.map(([label, value, deduction]) => <article key={label}><span>{label}</span><strong>{value === null ? "Unavailable" : `${deduction && Number(value) !== 0 ? "−" : ""}${money(deduction ? String(Math.abs(Number(value))) : value, report.reporting_currency)}`}</strong></article>)}</div>
+    {report.notes.length > 0 && <div className="attribution-notes"><strong>Calculation notes</strong><ul>{report.notes.map((note) => <li key={note}>{note}</li>)}</ul></div>}
   </section>;
 }
 

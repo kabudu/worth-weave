@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
-import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings } from "./api";
+import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
@@ -62,6 +62,7 @@ export function App() {
   const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal), enabled: ready && activeView === "Activity" });
   const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal), enabled: ready && activeView === "Income" });
   const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal), enabled: ready && (activeView === "Overview" || activeView === "Portfolio") });
+  const attribution = useQuery({ queryKey: ["total-return"], queryFn: ({ signal }) => getTotalReturnAttribution(signal), enabled: ready && activeView === "Portfolio" });
   const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal), enabled: ready && activeView === "Portfolio" });
   const allocation = useQuery({ queryKey: ["allocation"], queryFn: ({ signal }) => getPortfolioAllocation(signal), retry: false, enabled: ready && activeView === "Portfolio" });
   const reconciliation = useQuery({ queryKey: ["reconciliation"], queryFn: ({ signal }) => getPortfolioReconciliation(signal), enabled: ready && activeView === "Portfolio" });
@@ -122,7 +123,7 @@ export function App() {
           </div>
         </header>
 
-        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private local analysis</span><h1>Portfolio insights</h1><p>Ask questions about calculations Worthweave has already verified.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} /></section> : <>
+        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} attribution={attribution.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private local analysis</span><h1>Portfolio insights</h1><p>Ask questions about calculations Worthweave has already verified.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} /></section> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
             <p className="kicker">{dateLabel}</p>

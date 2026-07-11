@@ -233,7 +233,7 @@ footer { display:flex;justify-content:space-between;color:#97a19c;font-size:8px;
 footer { font-size:10px; }
 .dialog-columns form>p,.market-columns form>p,.dialog-privacy,.file-drop small { color:#53635b; }
 .dialog-privacy,.file-drop small { font-size:10px; }
-.settings-content>div>p,.settings-dialog .currency-form>p,.ai-settings p { color:#53635b; }
+.settings-content>div>p,.settings-dialog .currency-form>p,.backup-settings p,.ai-settings p { color:#53635b; }
 .settings-dialog .currency-form>p { font-size:11px; }
 .valuation-total>span,.valuation-total>small,.report-empty p { color:#53635b; }
 .valuation-total>span,.valuation-total>small { font-size:10px; }

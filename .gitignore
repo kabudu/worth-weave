@@ -14,6 +14,7 @@ htmlcov/
 *.db
 *.db-*
 node_modules/
+.pnpm-store/
 frontend/dist/
 frontend/playwright-report/
 frontend/test-results/

@@ -3,6 +3,7 @@ from collections.abc import Generator
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from ledgerly.config import get_settings
 
@@ -18,6 +19,7 @@ def _build_engine() -> Engine:
         settings.database_url,
         connect_args={"check_same_thread": False},
         pool_pre_ping=True,
+        poolclass=NullPool,
     )
 
     @event.listens_for(engine, "connect")

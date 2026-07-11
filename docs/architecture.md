@@ -34,3 +34,7 @@ React UI <- typed local API <- deterministic projections <-+
 ## Growth path
 
 A hosted product would add authenticated users, tenant ownership on every aggregate, encrypted managed storage, background jobs, rate-limited integrations, and an external secrets manager. Those concerns remain outside the local MVP but the account and service boundaries are compatible with them.
+
+## Toolchain compatibility
+
+The frontend uses TypeScript 6.0 rather than TypeScript 7.0 because the current stable `typescript-eslint` release declares support below TypeScript 6.1. This constraint keeps lint analysis supported instead of silently running the newest compiler through an incompatible parser. It should be revisited when `typescript-eslint` publishes TypeScript 7 support.

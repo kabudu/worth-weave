@@ -4,7 +4,7 @@ Ledgerly is a local-first portfolio application for consolidating investments he
 
 ## Status
 
-The repository contains the first application foundation: a typed Python API, SQLite persistence, broker-import boundaries, and a React interface. Broker exports used during development belong in `.dev/`, which is excluded from source control.
+The repository contains a typed Python API, migrated SQLite persistence, account-aware Trading 212 and IBKR CSV imports, and a responsive React interface. Broker exports used during development belong in `.dev/`, which is excluded from source control.
 
 ## Development
 
@@ -34,3 +34,4 @@ The API listens on `127.0.0.1:8000` and the frontend on `127.0.0.1:5173` in deve
 - Ollama integration is local-only and receives deterministic analytics rather than raw authority over calculations.
 
 See [docs/architecture.md](docs/architecture.md) and [docs/security.md](docs/security.md).
+The current import contract and limitations are documented in [docs/data-imports.md](docs/data-imports.md).

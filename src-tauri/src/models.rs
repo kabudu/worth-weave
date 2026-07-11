@@ -144,3 +144,17 @@ pub struct PortfolioSnapshot {
     pub reporting_currency: String,
     pub total_value: String,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AllocationSlice {
+    pub label: String,
+    pub value: String,
+    pub percentage: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AllocationReport {
+    pub reporting_currency: String,
+    pub by_account: Vec<AllocationSlice>,
+    pub by_currency: Vec<AllocationSlice>,
+}

@@ -21,6 +21,7 @@ function CurrencyForm({ currencies, initialCurrency, onSaved, submitLabel }: Cur
         queryClient.invalidateQueries({ queryKey: ["settings"] }),
         queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] }),
         queryClient.invalidateQueries({ queryKey: ["valuation"] }),
+        queryClient.invalidateQueries({ queryKey: ["allocation"] }),
       ]);
       onSaved?.();
     },

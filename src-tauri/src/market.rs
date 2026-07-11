@@ -7,10 +7,11 @@ use rust_decimal::Decimal;
 use crate::db;
 use crate::error::{LedgerlyError, Result};
 use crate::models::{
-    FxRate, PortfolioSnapshot, PriceQuote, SetFxRateInput, SetPriceInput, ValuationSummary,
-    ValuedHolding,
+    AllocationReport, AllocationSlice, FxRate, PortfolioSnapshot, PriceQuote, SetFxRateInput,
+    SetPriceInput, ValuationSummary, ValuedHolding,
 };
 use crate::projections;
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 fn parse_positive(value: &str, field: &str) -> Result<Decimal> {
@@ -236,4 +237,53 @@ pub fn snapshots(connection: &Connection) -> Result<Vec<PortfolioSnapshot>> {
     })?;
     rows.collect::<std::result::Result<_, _>>()
         .map_err(Into::into)
+}
+
+pub fn allocation(connection: &Connection) -> Result<AllocationReport> {
+    let valuation = valuation(connection)?;
+    let total = valuation
+        .total_value
+        .as_deref()
+        .ok_or_else(|| {
+            LedgerlyError::InvalidMarketData(
+                "allocation requires a complete portfolio valuation".into(),
+            )
+        })
+        .and_then(|value| {
+            Decimal::from_str(value)
+                .map_err(|_| LedgerlyError::InvalidMarketData("valuation total is invalid".into()))
+        })?;
+    if total <= Decimal::ZERO {
+        return Err(LedgerlyError::InvalidMarketData(
+            "allocation requires a positive portfolio value".into(),
+        ));
+    }
+    let mut accounts: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut currencies: BTreeMap<String, Decimal> = BTreeMap::new();
+    for item in valuation.holdings {
+        let value = Decimal::from_str(item.reporting_value.as_deref().unwrap_or("0"))
+            .map_err(|_| LedgerlyError::InvalidMarketData("holding valuation is invalid".into()))?;
+        *accounts.entry(item.holding.account_name).or_default() += value;
+        if let Some(price) = item.price {
+            *currencies.entry(price.currency).or_default() += value;
+        }
+    }
+    let slices = |values: BTreeMap<String, Decimal>| {
+        values
+            .into_iter()
+            .map(|(label, value)| AllocationSlice {
+                label,
+                value: value.normalize().to_string(),
+                percentage: ((value / total) * Decimal::ONE_HUNDRED)
+                    .round_dp(2)
+                    .normalize()
+                    .to_string(),
+            })
+            .collect()
+    };
+    Ok(AllocationReport {
+        reporting_currency: valuation.reporting_currency,
+        by_account: slices(accounts),
+        by_currency: slices(currencies),
+    })
 }

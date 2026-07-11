@@ -74,12 +74,18 @@ const valuationSummarySchema = z.object({
 const portfolioSnapshotSchema = z.object({
   id: z.string().uuid(), captured_at: z.string(), reporting_currency: z.string(), total_value: exactString,
 });
+const allocationReportSchema = z.object({
+  reporting_currency: z.string(),
+  by_account: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
+  by_currency: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
+});
 
 export type ActivityEvent = z.infer<typeof activityEventSchema>;
 export type Holding = z.infer<typeof holdingSchema>;
 export type IncomeSummary = z.infer<typeof incomeSummarySchema>;
 export type ValuationSummary = z.infer<typeof valuationSummarySchema>;
 export type PortfolioSnapshot = z.infer<typeof portfolioSnapshotSchema>;
+export type AllocationReport = z.infer<typeof allocationReportSchema>;
 
 export async function getPortfolioSummary(signal?: AbortSignal): Promise<PortfolioSummary> {
   signal?.throwIfAborted();
@@ -142,6 +148,11 @@ export async function getPortfolioSnapshots(signal?: AbortSignal): Promise<Portf
 
 export async function capturePortfolioSnapshot(): Promise<PortfolioSnapshot> {
   return portfolioSnapshotSchema.parse(await invoke("capture_portfolio_snapshot"));
+}
+
+export async function getPortfolioAllocation(signal?: AbortSignal): Promise<AllocationReport> {
+  signal?.throwIfAborted();
+  return allocationReportSchema.parse(await invoke("portfolio_allocation"));
 }
 
 export async function createAccount(input: {

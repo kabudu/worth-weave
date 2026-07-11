@@ -27,6 +27,7 @@ function mockNativeCommands(onboardingComplete: boolean) {
       reporting_currency: "GBP", total_value: null, missing_price_count: 0,
       missing_fx_count: 0, holdings: [],
     };
+    if (command === "portfolio_allocation") return { reporting_currency: "GBP", by_account: [], by_currency: [] };
     if (command === "update_settings") return {
       reporting_currency: "GBP",
       onboarding_complete: true,

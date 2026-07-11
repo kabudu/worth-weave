@@ -8,9 +8,9 @@ mod projections;
 use db::AppState;
 use error::{LedgerlyError, Result};
 use models::{
-    Account, ActivityEvent, AppSettings, CreateAccountInput, CurrencyOption, FxRate, Holding,
-    ImportResult, IncomeSummary, PortfolioSnapshot, PortfolioSummary, PriceQuote, SetFxRateInput,
-    SetPriceInput, UpdateSettingsInput, ValuationSummary,
+    Account, ActivityEvent, AllocationReport, AppSettings, CreateAccountInput, CurrencyOption,
+    FxRate, Holding, ImportResult, IncomeSummary, PortfolioSnapshot, PortfolioSummary, PriceQuote,
+    SetFxRateInput, SetPriceInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Manager, State};
 
@@ -98,6 +98,11 @@ fn list_portfolio_snapshots(state: State<'_, AppState>) -> Result<Vec<PortfolioS
 }
 
 #[tauri::command]
+fn portfolio_allocation(state: State<'_, AppState>) -> Result<AllocationReport> {
+    with_connection(&state, |connection| market::allocation(connection))
+}
+
+#[tauri::command]
 fn import_broker_file(
     account_id: String,
     file_path: String,
@@ -145,6 +150,7 @@ pub fn run() {
             portfolio_valuation,
             capture_portfolio_snapshot,
             list_portfolio_snapshots,
+            portfolio_allocation,
             import_broker_file
         ])
         .run(tauri::generate_context!())
@@ -278,6 +284,9 @@ mod tests {
         let snapshot = market::capture_snapshot(&connection).expect("snapshot");
         assert_eq!(snapshot.total_value, "96");
         assert_eq!(market::snapshots(&connection).expect("snapshots").len(), 1);
+        let allocation = market::allocation(&connection).expect("allocation");
+        assert_eq!(allocation.by_account[0].value, "96");
+        assert_eq!(allocation.by_account[0].percentage, "100");
     }
 
     #[test]

@@ -57,6 +57,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
         queryClient.invalidateQueries({ queryKey: ["activity"] }),
         queryClient.invalidateQueries({ queryKey: ["income"] }),
         queryClient.invalidateQueries({ queryKey: ["valuation"] }),
+        queryClient.invalidateQueries({ queryKey: ["allocation"] }),
       ]);
     },
   });

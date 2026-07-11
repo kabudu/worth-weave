@@ -16,7 +16,10 @@ export function MarketDataDialog({ open, onClose, holdings, currencies, reportin
   const [rate, setRate] = useState("");
   useEffect(() => { const dialog = dialogRef.current; if (!dialog) return; if (open && !dialog.open) dialog.showModal(); if (!open && dialog.open) dialog.close(); }, [open]);
   const effectiveInstrument = instrument || holdings[0]?.instrument_id || "";
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["valuation"] });
+  const refresh = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["valuation"] }),
+    queryClient.invalidateQueries({ queryKey: ["allocation"] }),
+  ]);
   const priceMutation = useMutation({ mutationFn: setMarketPrice, onSuccess: async () => { setPrice(""); await refresh(); } });
   const fxMutation = useMutation({ mutationFn: setFxRate, onSuccess: async () => { setRate(""); await refresh(); } });
   function submitPrice(event: FormEvent) { event.preventDefault(); priceMutation.mutate({ instrument_id: effectiveInstrument, price, currency: priceCurrency }); }

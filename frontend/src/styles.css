@@ -175,6 +175,7 @@ footer { display:flex;justify-content:space-between;color:#97a19c;font-size:8px;
 .onboarding-panel .section-kicker { color:#315f49; }
 .onboarding-intro { color:#53635b; }
 .account-picker legend small { color:#53635b; }
+.broker-card{min-width:0;margin:0;padding:0 12px 8px;border:1px solid rgba(20,44,36,.13);border-radius:14px;background:rgba(255,255,255,.68);overflow:hidden}.account-picker .broker-card>legend{width:calc(100% + 24px);margin-left:-12px;padding:13px 14px 11px;border-bottom:1px solid rgba(20,44,36,.1);background:#f0f4ef;color:#173b2f;font-size:13px;font-weight:750;letter-spacing:-.2px;text-transform:none}.account-options{display:grid}.account-picker .account-option{grid-template-columns:auto 1fr auto;margin:0;padding:11px 2px;border:0;border-top:1px solid rgba(20,44,36,.08);border-radius:0;background:transparent;box-shadow:none}.account-picker .account-option:first-child{border-top:0}.account-picker .account-option.selected{background:linear-gradient(90deg,rgba(81,164,119,.11),transparent);box-shadow:none}.account-picker .account-option strong{font-size:10px}.account-picker .account-option small{font-size:9px}
 .onboarding-panel .currency-form>p { color:#596861; }
 .onboarding-trust { color:#596861; }
 .reconciliation-card { margin-top:14px;padding:20px 22px;display:grid;grid-template-columns:.7fr 1.3fr;gap:24px;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.58); }

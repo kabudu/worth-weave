@@ -59,10 +59,14 @@ export function Onboarding({ currencies }: { currencies: CurrencyOption[] }) {
   const [currency, setCurrency] = useState("GBP");
   const [selectedAccounts, setSelectedAccounts] = useState(() => new Set(["trading_212:stocks_and_shares_isa", "ibkr:invest", "ibkr:stocks_and_shares_isa"]));
   const accountOptions: Array<InitialAccount & { id: string; label: string; detail: string }> = [
-    { id: "trading_212:stocks_and_shares_isa", broker: "trading_212", account_type: "stocks_and_shares_isa", display_name: "Trading 212 ISA", label: "Trading 212 ISA", detail: "Stocks and Shares ISA" },
-    { id: "trading_212:invest", broker: "trading_212", account_type: "invest", display_name: "Trading 212 Invest", label: "Trading 212 Invest", detail: "General investment account" },
-    { id: "ibkr:stocks_and_shares_isa", broker: "ibkr", account_type: "stocks_and_shares_isa", display_name: "IBKR ISA", label: "Interactive Brokers ISA", detail: "Stocks and Shares ISA" },
-    { id: "ibkr:invest", broker: "ibkr", account_type: "invest", display_name: "IBKR Invest", label: "Interactive Brokers Invest", detail: "General investment account" },
+    { id: "trading_212:stocks_and_shares_isa", broker: "trading_212", account_type: "stocks_and_shares_isa", display_name: "Trading 212 ISA", label: "Stocks and Shares ISA", detail: "Tax-free investment account" },
+    { id: "trading_212:invest", broker: "trading_212", account_type: "invest", display_name: "Trading 212 Invest", label: "Invest account", detail: "General investment account" },
+    { id: "ibkr:stocks_and_shares_isa", broker: "ibkr", account_type: "stocks_and_shares_isa", display_name: "IBKR ISA", label: "Stocks and Shares ISA", detail: "Tax-free investment account" },
+    { id: "ibkr:invest", broker: "ibkr", account_type: "invest", display_name: "IBKR Invest", label: "Invest account", detail: "General investment account" },
+  ];
+  const brokerGroups = [
+    { id: "trading_212", name: "Trading 212", accounts: accountOptions.filter((account) => account.broker === "trading_212") },
+    { id: "ibkr", name: "Interactive Brokers", accounts: accountOptions.filter((account) => account.broker === "ibkr") },
   ];
   const setup = useMutation({
     mutationFn: () => completeInitialSetup(currency, accountOptions.filter((account) => selectedAccounts.has(account.id))),
@@ -87,7 +91,7 @@ export function Onboarding({ currencies }: { currencies: CurrencyOption[] }) {
           <label htmlFor="reporting-currency">Reporting currency</label>
           <div className="currency-select-wrap"><span aria-hidden="true">{selectedCurrency?.symbol ?? "¤"}</span><select id="reporting-currency" value={currency} onChange={(event) => setCurrency(event.target.value)}>{currencies.map((option) => <option value={option.code} key={option.code}>{option.code} — {option.name}</option>)}</select></div>
           <p className="field-help">Your consolidated value and performance use this currency. Imported transactions retain their original currencies.</p>
-          <fieldset className="account-picker"><legend>Accounts to track <small>Optional</small></legend><p>Selecting these now creates separate account records, so ISA and taxable activity never mix.</p><div>{accountOptions.map((account) => <label key={account.id} className={selectedAccounts.has(account.id) ? "selected" : ""}><input type="checkbox" checked={selectedAccounts.has(account.id)} onChange={() => toggleAccount(account.id)} /><span><strong>{account.label}</strong><small>{account.detail}</small></span><i aria-hidden="true">✓</i></label>)}</div></fieldset>
+          <fieldset className="account-picker"><legend>Brokers and accounts <small>Optional</small></legend><p>Select the account types you hold with each broker. ISA and taxable activity will always remain separate.</p><div className="broker-grid">{brokerGroups.map((group) => <fieldset className="broker-card" key={group.id}><legend>{group.name}</legend><div className="account-options">{group.accounts.map((account) => <label key={account.id} className={`account-option ${selectedAccounts.has(account.id) ? "selected" : ""}`}><input type="checkbox" aria-label={`${group.name} ${account.account_type === "stocks_and_shares_isa" ? "ISA" : "Invest"}`} checked={selectedAccounts.has(account.id)} onChange={() => toggleAccount(account.id)} /><span><strong>{account.label}</strong><small>{account.detail}</small></span><i aria-hidden="true">✓</i></label>)}</div></fieldset>)}</div></fieldset>
           <button className="primary-button currency-submit" type="submit" disabled={setup.isPending}>{setup.isPending ? "Preparing your portfolio…" : "Continue"} <span>→</span></button>
           {setup.isError && <small className="form-error" role="alert">{String(setup.error)}</small>}
         </form>

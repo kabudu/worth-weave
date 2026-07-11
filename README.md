@@ -32,3 +32,4 @@ frontend/node_modules/.bin/tauri build
 ```
 
 Private broker exports belong in `.dev/`, which is excluded from source control. See [the architecture](docs/architecture.md), [import contract](docs/data-imports.md), and [security model](docs/security.md).
+Progress toward the usable local v1 is tracked in the [v1 completion contract](docs/roadmap.md).

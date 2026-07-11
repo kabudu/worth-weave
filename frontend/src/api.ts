@@ -45,6 +45,26 @@ const currencyOptionSchema = z.object({
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 export type CurrencyOption = z.infer<typeof currencyOptionSchema>;
 
+const exactString = z.string().regex(/^-?\d+(?:\.\d+)?$/);
+const activityEventSchema = z.object({
+  id: z.string().uuid(), account_id: z.string().uuid(), account_name: z.string(),
+  broker: z.enum(["trading_212", "ibkr"]), event_type: z.string(), occurred_at: z.string(),
+  description: z.string(), amount: exactString.nullable(), currency: z.string().nullable(),
+  quantity: exactString.nullable(), instrument_id: z.string().nullable(),
+});
+const holdingSchema = z.object({
+  account_id: z.string().uuid(), account_name: z.string(), broker: z.enum(["trading_212", "ibkr"]),
+  instrument_id: z.string(), quantity: exactString, cost_basis: exactString.nullable(),
+  average_cost: exactString.nullable(), currency: z.string().nullable(), cost_basis_complete: z.boolean(),
+});
+const incomeSummarySchema = z.object({
+  currency: z.string(), dividends: exactString, interest: exactString, total: exactString,
+});
+
+export type ActivityEvent = z.infer<typeof activityEventSchema>;
+export type Holding = z.infer<typeof holdingSchema>;
+export type IncomeSummary = z.infer<typeof incomeSummarySchema>;
+
 export async function getPortfolioSummary(signal?: AbortSignal): Promise<PortfolioSummary> {
   signal?.throwIfAborted();
   return portfolioSummarySchema.parse(await invoke("portfolio_summary"));
@@ -69,6 +89,21 @@ export async function updateSettings(reportingCurrency: string): Promise<AppSett
   return appSettingsSchema.parse(await invoke("update_settings", {
     input: { reporting_currency: reportingCurrency },
   }));
+}
+
+export async function getActivity(signal?: AbortSignal): Promise<ActivityEvent[]> {
+  signal?.throwIfAborted();
+  return z.array(activityEventSchema).parse(await invoke("list_activity", { limit: 250 }));
+}
+
+export async function getHoldings(signal?: AbortSignal): Promise<Holding[]> {
+  signal?.throwIfAborted();
+  return z.array(holdingSchema).parse(await invoke("list_holdings"));
+}
+
+export async function getIncomeSummary(signal?: AbortSignal): Promise<IncomeSummary[]> {
+  signal?.throwIfAborted();
+  return z.array(incomeSummarySchema).parse(await invoke("income_summary"));
 }
 
 export async function createAccount(input: {

@@ -50,3 +50,39 @@ pub struct ImportResult {
     pub events_added: usize,
     pub warnings: Vec<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ActivityEvent {
+    pub id: String,
+    pub account_id: String,
+    pub account_name: String,
+    pub broker: String,
+    pub event_type: String,
+    pub occurred_at: String,
+    pub description: String,
+    pub amount: Option<String>,
+    pub currency: Option<String>,
+    pub quantity: Option<String>,
+    pub instrument_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Holding {
+    pub account_id: String,
+    pub account_name: String,
+    pub broker: String,
+    pub instrument_id: String,
+    pub quantity: String,
+    pub cost_basis: Option<String>,
+    pub average_cost: Option<String>,
+    pub currency: Option<String>,
+    pub cost_basis_complete: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IncomeSummary {
+    pub currency: String,
+    pub dividends: String,
+    pub interest: String,
+    pub total: String,
+}

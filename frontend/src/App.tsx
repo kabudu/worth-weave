@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
-import { getCurrencies, getPortfolioSummary, getSettings } from "./api";
+import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioSummary, getSettings } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { ImportDialog } from "./ImportDialog";
+import { ActivityView, IncomeView, PortfolioView } from "./ReportingViews";
 
 const navItems = [
   ["Overview", "⌁"],
@@ -37,6 +38,7 @@ function StatusOrb({ imports }: { imports: number }) {
 }
 
 export function App() {
+  const [activeView, setActiveView] = useState("Overview");
   const [importOpen, setImportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settings = useQuery({
@@ -52,6 +54,9 @@ export function App() {
     queryKey: ["portfolio-summary"],
     queryFn: ({ signal }) => getPortfolioSummary(signal),
   });
+  const holdings = useQuery({ queryKey: ["holdings"], queryFn: ({ signal }) => getHoldings(signal) });
+  const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal) });
+  const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal) });
   const accountCount = summary.data?.account_count ?? 0;
   const importCount = summary.data?.import_count ?? 0;
   const reportingCurrency = settings.data?.reporting_currency ?? "GBP";
@@ -74,11 +79,11 @@ export function App() {
           <span>worthweave</span>
         </a>
         <nav aria-label="Primary navigation">
-          {navItems.map(([label, icon], index) => (
-            <a className={index === 0 ? "active" : ""} href={`#${label.toLowerCase()}`} key={label}>
+          {navItems.map(([label, icon]) => (
+            <button className={activeView === label ? "active" : ""} type="button" onClick={() => setActiveView(label)} key={label}>
               <span aria-hidden="true">{icon}</span>
               {label}
-            </a>
+            </button>
           ))}
           <button type="button" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span>Settings</button>
         </nav>
@@ -106,6 +111,7 @@ export function App() {
           </div>
         </header>
 
+        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
             <p className="kicker">Saturday, 11 July</p>
@@ -168,6 +174,7 @@ export function App() {
             <button className="ask-button" type="button" disabled>Available after reconciliation <span>↗</span></button>
           </article>
         </section>
+        </>}
 
         <footer><span>Worthweave · Local mode</span><span>Deterministic ledger <i /> Private AI ready</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />

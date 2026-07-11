@@ -51,7 +51,12 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
       importBrokerFile(account, source),
     onSuccess: async (nextResult) => {
       setResult(nextResult);
-      await queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] }),
+        queryClient.invalidateQueries({ queryKey: ["holdings"] }),
+        queryClient.invalidateQueries({ queryKey: ["activity"] }),
+        queryClient.invalidateQueries({ queryKey: ["income"] }),
+      ]);
     },
   });
 

@@ -20,9 +20,9 @@ export function AiOnboarding() {
       {recommendation.isPending && <div className="ai-choice">Inspecting this device…</div>}
       {recommendation.isError && <div className="form-error" role="alert">Could not inspect this device: {String(recommendation.error)}</div>}
       {choice && <div className="ai-choice">
-        <div className="ai-choice-heading"><span>✦</span><div><small>Recommended runtime</small><strong>{choice.runtime_name}</strong></div>{choice.installed && <em>Installed</em>}</div>
+        <div className="ai-choice-heading"><span>✦</span><div><small>Recommended local AI engine</small><strong>{choice.runtime_name}</strong></div>{choice.installed && <em>Installed</em>}</div>
         <dl><div><dt>Model</dt><dd>{choice.model}</dd></div><div><dt>Why this fit</dt><dd>{choice.rationale}</dd></div></dl>
-        <p>Setup uses the runtime’s official package tooling and downloads model files that may use several gigabytes. Nothing is installed until you choose setup.</p>
+        <p>Setup uses the engine’s official installer and downloads model files that may use several gigabytes. Nothing is installed until you choose setup.</p>
       </div>}
       <div className="ai-actions">
         <button className="primary-button" type="button" disabled={!choice || !choice.supported || busy} onClick={() => setup.mutate()}>{setup.isPending ? "Setting up local AI…" : "Set up recommended AI"}<span>→</span></button>

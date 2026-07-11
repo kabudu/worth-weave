@@ -16,9 +16,13 @@ const currencies = [
 ];
 
 function mockNativeCommands(onboardingComplete: boolean, aiOnboardingComplete = true) {
-  vi.mocked(invoke).mockImplementation(async (command) => {
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (["list_accounts", "list_holdings", "list_activity", "income_summary", "list_portfolio_snapshots", "portfolio_reconciliation"].includes(command)) return [];
     if (command === "list_currencies") return currencies;
+    if (command === "create_account") {
+      const input = (args as { input: { broker: string; account_type: string; display_name: string } }).input;
+      return { id: crypto.randomUUID(), base_currency: "GBP", ...input };
+    }
     if (command === "get_settings") return {
       reporting_currency: onboardingComplete ? "GBP" : null,
       onboarding_complete: onboardingComplete,
@@ -73,7 +77,7 @@ test("renders truthful empty portfolio state", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: /import data/i }));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_accounts"));
-  expect(screen.getByRole("heading", { name: /add portfolio data/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /import broker data/i })).toBeInTheDocument();
   expect(screen.getByText(/broker credentials are never required/i)).toBeInTheDocument();
 });
 
@@ -87,7 +91,9 @@ test("requires reporting currency during first-run onboarding", async () => {
     </QueryClientProvider>,
   );
 
-  expect(await screen.findByRole("heading", { name: /make every number/i })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /bring your portfolio/i })).toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: /trading 212 isa/i })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: /trading 212 invest/i })).not.toBeChecked();
   expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "portfolio_summary")).toBe(false);
   const currencySelect = screen.getByLabelText("Reporting currency");
   fireEvent.change(currencySelect, { target: { value: "EUR" } });
@@ -97,6 +103,7 @@ test("requires reporting currency during first-run onboarding", async () => {
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("update_settings", {
     input: { reporting_currency: "EUR" },
   }));
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "create_account")).toHaveLength(3);
 });
 
 test("offers explicit device-tuned local AI setup or skip", async () => {

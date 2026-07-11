@@ -93,7 +93,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
   return (
     <dialog ref={dialogRef} className="import-dialog" onClose={close}>
       <div className="dialog-topline">
-        <div><span className="section-kicker">Secure local import</span><h2>Add portfolio data</h2></div>
+        <div><span className="section-kicker">Private file import</span><h2>Import broker data</h2></div>
         <button type="button" className="dialog-close" onClick={close} aria-label="Close import dialog">×</button>
       </div>
 
@@ -101,7 +101,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
         <section className="import-success" aria-live="polite">
           <span>✓</span>
           <h3>Import verified</h3>
-          <p>{result.events_added.toLocaleString()} canonical events added.</p>
+          <p>{result.events_added.toLocaleString()} transactions and cash events added.</p>
           <dl><div><dt>Coverage starts</dt><dd>{result.coverage_start}</dd></div><div><dt>Coverage ends</dt><dd>{result.coverage_end}</dd></div></dl>
           {result.warnings.map((warning) => <small key={warning}>{warning}</small>)}
           <button className="primary-button" type="button" onClick={close}>Done</button>
@@ -111,8 +111,8 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
           <form onSubmit={handleCreate}>
             <div className="form-number">1</div>
             <h3>Create an account</h3>
-            <p>Account boundaries keep ISA and taxable activity separate.</p>
-            <label>Platform<select value={broker} onChange={(event) => setBroker(event.target.value as Broker)}><option value="trading_212">Trading 212</option><option value="ibkr">Interactive Brokers</option></select></label>
+            <p>Separate accounts keep ISA and taxable activity from being combined.</p>
+            <label>Broker<select value={broker} onChange={(event) => setBroker(event.target.value as Broker)}><option value="trading_212">Trading 212</option><option value="ibkr">Interactive Brokers</option></select></label>
             <label>Account type<select value={accountType} onChange={(event) => setAccountType(event.target.value as AccountType)}><option value="stocks_and_shares_isa">Stocks &amp; Shares ISA</option><option value="invest">Invest</option></select></label>
             <label>Account name<input value={displayName} maxLength={160} required onChange={(event) => setDisplayName(event.target.value)} /></label>
             <button type="submit" className="secondary-button" disabled={createMutation.isPending || !displayName.trim()}>{createMutation.isPending ? "Creating…" : "Create account"}</button>

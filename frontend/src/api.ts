@@ -146,6 +146,23 @@ export async function updateSettings(reportingCurrency: string): Promise<AppSett
   }));
 }
 
+export type InitialAccount = Pick<Account, "broker" | "account_type" | "display_name">;
+
+export async function completeInitialSetup(reportingCurrency: string, requestedAccounts: InitialAccount[]): Promise<AppSettings> {
+  const existing = await getAccounts();
+  for (const account of requestedAccounts) {
+    const alreadyExists = existing.some((candidate) =>
+      candidate.broker === account.broker && candidate.account_type === account.account_type,
+    );
+    if (!alreadyExists) await createAccount({
+      broker: account.broker,
+      account_type: account.account_type,
+      display_name: account.display_name,
+    });
+  }
+  return updateSettings(reportingCurrency);
+}
+
 export async function getAiRecommendation(signal?: AbortSignal): Promise<AiRecommendation> {
   signal?.throwIfAborted();
   return aiRecommendationSchema.parse(await invoke("ai_recommendation"));

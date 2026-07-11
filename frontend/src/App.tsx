@@ -116,19 +116,19 @@ export function App() {
 
       <main id="top">
         <header className="topbar">
-          <div className="eyebrow"><span /> Local intelligence</div>
+          <div className="eyebrow"><span /> Local portfolio analysis</div>
           <div className="top-actions">
             <button className="primary-button" type="button" onClick={() => setImportOpen(true)}><span>＋</span> Import data</button>
           </div>
         </header>
 
-        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private local intelligence</span><h1>Portfolio insights</h1><p>Ask questions grounded in Worthweave’s deterministic analytics.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} /></section> : <>
+        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private local analysis</span><h1>Portfolio insights</h1><p>Ask questions about calculations Worthweave has already verified.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} /></section> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
             <p className="kicker">{dateLabel}</p>
             <h1 id="welcome-title">{greeting}.<br /><em>Your wealth, in focus.</em></h1>
             <p className="hero-copy">
-              One calm, trustworthy view across every investment account—calculated locally and
+              One calm, trustworthy view across every investment account—calculated on this Mac and
               explained in plain English.
             </p>
           </div>
@@ -146,19 +146,19 @@ export function App() {
           <article className="metric-card featured">
             <div className="metric-heading"><span>Total portfolio</span><span className="status-chip">{valuation.data?.total_value ? "Valued" : importCount > 0 ? "Needs market data" : "Awaiting data"}</span></div>
             <strong className="metric-value">{valuation.data?.total_value ? new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_value)) : "—"}</strong>
-            <p>{valuation.data?.total_value ? `${valuation.data.total_gain_loss ? `${new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_gain_loss))} total gain/loss · ` : ""}${valuation.data.stale_price_count + valuation.data.stale_fx_count} stale inputs` : "Add complete prices and FX rates to calculate a truthful total."}</p>
+            <p>{valuation.data?.total_value ? `${valuation.data.total_gain_loss ? `${new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_gain_loss))} total gain/loss · ` : ""}${valuation.data.stale_price_count + valuation.data.stale_fx_count} stale inputs` : "Add current prices and exchange rates to calculate your total."}</p>
           </article>
           <article className="metric-card">
             <div className="metric-icon violet">◈</div>
             <span>Accounts</span>
             <strong className="metric-value small">{summary.isPending ? "…" : accountCount}</strong>
-            <p>{accountCount === 0 ? "Create separate Invest and ISA accounts" : `${accountCount} local account${accountCount === 1 ? "" : "s"} configured`}</p>
+            <p>{accountCount === 0 ? "Add each Invest and ISA account separately" : `${accountCount} account${accountCount === 1 ? "" : "s"} ready for imports`}</p>
           </article>
           <article className="metric-card">
             <div className="metric-icon amber">↗</div>
             <span>Imports verified</span>
             <strong className="metric-value small">{summary.isPending ? "…" : importCount}</strong>
-            <p>Duplicate-safe, account-aware source batches</p>
+            <p>Broker files checked for duplicates and assigned to the right account</p>
           </article>
         </section>
 
@@ -179,7 +179,7 @@ export function App() {
         </section>
         </>}
 
-        <footer><span>Worthweave · Local mode</span><span>Deterministic ledger <i /> {settings.data.ai_runtime ? "Private AI configured" : "Private AI optional"}</span></footer>
+        <footer><span>Worthweave · Local mode</span><span>Verified calculations <i /> {settings.data.ai_runtime ? "Private AI configured" : "Private AI optional"}</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
         <SettingsDialog currencies={currencies.data} currentCurrency={reportingCurrency} aiRuntime={settings.data.ai_runtime} aiModel={settings.data.ai_model} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </main>

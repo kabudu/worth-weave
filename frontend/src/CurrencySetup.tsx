@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 
-import { createEncryptedBackup, exportPortfolioJson, restoreEncryptedBackup, updateSettings, type CurrencyOption } from "./api";
+import { completeInitialSetup, createEncryptedBackup, exportPortfolioJson, restoreEncryptedBackup, updateSettings, type CurrencyOption, type InitialAccount } from "./api";
 import { AiSettingsPanel } from "./AiSetup";
 
 type CurrencyFormProps = {
@@ -55,14 +55,42 @@ function CurrencyForm({ currencies, initialCurrency, onSaved, submitLabel }: Cur
 }
 
 export function Onboarding({ currencies }: { currencies: CurrencyOption[] }) {
+  const queryClient = useQueryClient();
+  const [currency, setCurrency] = useState("GBP");
+  const [selectedAccounts, setSelectedAccounts] = useState(() => new Set(["trading_212:stocks_and_shares_isa", "ibkr:invest", "ibkr:stocks_and_shares_isa"]));
+  const accountOptions: Array<InitialAccount & { id: string; label: string; detail: string }> = [
+    { id: "trading_212:stocks_and_shares_isa", broker: "trading_212", account_type: "stocks_and_shares_isa", display_name: "Trading 212 ISA", label: "Trading 212 ISA", detail: "Stocks and Shares ISA" },
+    { id: "trading_212:invest", broker: "trading_212", account_type: "invest", display_name: "Trading 212 Invest", label: "Trading 212 Invest", detail: "General investment account" },
+    { id: "ibkr:stocks_and_shares_isa", broker: "ibkr", account_type: "stocks_and_shares_isa", display_name: "IBKR ISA", label: "Interactive Brokers ISA", detail: "Stocks and Shares ISA" },
+    { id: "ibkr:invest", broker: "ibkr", account_type: "invest", display_name: "IBKR Invest", label: "Interactive Brokers Invest", detail: "General investment account" },
+  ];
+  const setup = useMutation({
+    mutationFn: () => completeInitialSetup(currency, accountOptions.filter((account) => selectedAccounts.has(account.id))),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
+  });
+  const selectedCurrency = currencies.find((option) => option.code === currency);
+  function toggleAccount(id: string) {
+    setSelectedAccounts((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
   return (
     <main className="onboarding-shell">
       <section className="onboarding-panel">
         <div className="onboarding-brand"><span className="onboarding-mark">W</span><strong>worthweave</strong></div>
         <span className="section-kicker">Welcome · Step 1 of 2</span>
-        <h1>Make every number<br /><em>feel like home.</em></h1>
-        <p className="onboarding-intro">Choose the currency Worthweave should use when bringing your investments together. You can change it later in Settings.</p>
-        <CurrencyForm currencies={currencies} submitLabel="Continue" />
+        <h1>Bring your portfolio<br /><em>into one clear view.</em></h1>
+        <p className="onboarding-intro">Choose how totals are displayed and which accounts you plan to import. Everything can be changed later.</p>
+        <form className="initial-setup-form" onSubmit={(event) => { event.preventDefault(); setup.mutate(); }}>
+          <label htmlFor="reporting-currency">Reporting currency</label>
+          <div className="currency-select-wrap"><span aria-hidden="true">{selectedCurrency?.symbol ?? "¤"}</span><select id="reporting-currency" value={currency} onChange={(event) => setCurrency(event.target.value)}>{currencies.map((option) => <option value={option.code} key={option.code}>{option.code} — {option.name}</option>)}</select></div>
+          <p className="field-help">Your consolidated value and performance use this currency. Imported transactions retain their original currencies.</p>
+          <fieldset className="account-picker"><legend>Accounts to track <small>Optional</small></legend><p>Selecting these now creates separate account records, so ISA and taxable activity never mix.</p><div>{accountOptions.map((account) => <label key={account.id} className={selectedAccounts.has(account.id) ? "selected" : ""}><input type="checkbox" checked={selectedAccounts.has(account.id)} onChange={() => toggleAccount(account.id)} /><span><strong>{account.label}</strong><small>{account.detail}</small></span><i aria-hidden="true">✓</i></label>)}</div></fieldset>
+          <button className="primary-button currency-submit" type="submit" disabled={setup.isPending}>{setup.isPending ? "Preparing your portfolio…" : "Continue"} <span>→</span></button>
+          {setup.isError && <small className="form-error" role="alert">{String(setup.error)}</small>}
+        </form>
         <div className="onboarding-trust"><span>●</span> Saved locally on this Mac</div>
       </section>
       <aside className="onboarding-art" aria-hidden="true">

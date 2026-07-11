@@ -21,6 +21,28 @@ pub struct Account {
 pub struct AppSettings {
     pub reporting_currency: Option<String>,
     pub onboarding_complete: bool,
+    pub ai_onboarding_complete: bool,
+    pub ai_runtime: Option<String>,
+    pub ai_model: Option<String>,
+    pub ai_endpoint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AiRecommendation {
+    pub runtime: &'static str,
+    pub runtime_name: &'static str,
+    pub model: String,
+    pub endpoint: &'static str,
+    pub rationale: String,
+    pub installed: bool,
+    pub supported: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SaveAiSettingsInput {
+    pub runtime: Option<String>,
+    pub model: Option<String>,
+    pub endpoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
+import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
 import { ActivityView, IncomeView, PortfolioView } from "./ReportingViews";
 
@@ -73,6 +74,7 @@ export function App() {
   if (!settings.data.onboarding_complete) {
     return <Onboarding currencies={currencies.data} />;
   }
+  if (!settings.data.ai_onboarding_complete) return <AiOnboarding />;
 
   return (
     <div className="app-shell">
@@ -181,7 +183,7 @@ export function App() {
 
         <footer><span>Worthweave · Local mode</span><span>Deterministic ledger <i /> Private AI ready</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
-        <SettingsDialog currencies={currencies.data} currentCurrency={reportingCurrency} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <SettingsDialog currencies={currencies.data} currentCurrency={reportingCurrency} aiRuntime={settings.data.ai_runtime} aiModel={settings.data.ai_model} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </main>
     </div>
   );

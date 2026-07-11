@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 
 import { createEncryptedBackup, exportPortfolioJson, restoreEncryptedBackup, updateSettings, type CurrencyOption } from "./api";
+import { AiSettingsPanel } from "./AiSetup";
 
 type CurrencyFormProps = {
   currencies: CurrencyOption[];
@@ -58,10 +59,10 @@ export function Onboarding({ currencies }: { currencies: CurrencyOption[] }) {
     <main className="onboarding-shell">
       <section className="onboarding-panel">
         <div className="onboarding-brand"><span className="onboarding-mark">W</span><strong>worthweave</strong></div>
-        <span className="section-kicker">Welcome · Step 1 of 1</span>
+        <span className="section-kicker">Welcome · Step 1 of 2</span>
         <h1>Make every number<br /><em>feel like home.</em></h1>
         <p className="onboarding-intro">Choose the currency Worthweave should use when bringing your investments together. You can change it later in Settings.</p>
-        <CurrencyForm currencies={currencies} submitLabel="Enter Worthweave" />
+        <CurrencyForm currencies={currencies} submitLabel="Continue" />
         <div className="onboarding-trust"><span>●</span> Saved locally on this Mac</div>
       </section>
       <aside className="onboarding-art" aria-hidden="true">
@@ -77,9 +78,11 @@ type SettingsDialogProps = {
   currentCurrency: string;
   open: boolean;
   onClose: () => void;
+  aiRuntime?: string | null;
+  aiModel?: string | null;
 };
 
-export function SettingsDialog({ currencies, currentCurrency, open, onClose }: SettingsDialogProps) {
+export function SettingsDialog({ currencies, currentCurrency, open, onClose, aiRuntime = null, aiModel = null }: SettingsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -98,6 +101,7 @@ export function SettingsDialog({ currencies, currentCurrency, open, onClose }: S
         <div><h3>Reporting currency</h3><p>Changes how consolidated portfolio values are presented. Source transactions are never rewritten.</p></div>
         <CurrencyForm currencies={currencies} initialCurrency={currentCurrency} onSaved={onClose} submitLabel="Save changes" />
       </section>
+      <AiSettingsPanel runtime={aiRuntime} model={aiModel} />
       <BackupPanel />
     </dialog>
   );

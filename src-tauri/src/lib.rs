@@ -1,3 +1,4 @@
+mod ai;
 mod backup;
 mod db;
 mod error;
@@ -9,10 +10,10 @@ mod projections;
 use db::AppState;
 use error::{LedgerlyError, Result};
 use models::{
-    Account, ActivityEvent, AllocationReport, AppSettings, BackupInput, CreateAccountInput,
-    CurrencyOption, FxRate, Holding, ImportResult, IncomeSummary, PortfolioSnapshot,
-    PortfolioSummary, PriceQuote, SetFxRateInput, SetPriceInput, UpdateSettingsInput,
-    ValuationSummary,
+    Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
+    CreateAccountInput, CurrencyOption, FxRate, Holding, ImportResult, IncomeSummary,
+    PortfolioSnapshot, PortfolioSummary, PriceQuote, SaveAiSettingsInput, SetFxRateInput,
+    SetPriceInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Manager, State};
 
@@ -55,6 +56,44 @@ fn list_currencies() -> &'static [CurrencyOption] {
 #[tauri::command]
 fn update_settings(input: UpdateSettingsInput, state: State<'_, AppState>) -> Result<AppSettings> {
     with_connection(&state, |connection| db::update_settings(connection, &input))
+}
+
+#[tauri::command]
+fn ai_recommendation() -> AiRecommendation {
+    ai::recommendation()
+}
+
+#[tauri::command]
+async fn setup_recommended_ai(state: State<'_, AppState>) -> Result<AppSettings> {
+    let recommendation = ai::recommendation();
+    let install_target = recommendation.clone();
+    tauri::async_runtime::spawn_blocking(move || ai::install(&install_target))
+        .await
+        .map_err(|error| {
+            LedgerlyError::InvalidSettings(format!("AI setup task failed: {error}"))
+        })??;
+    let input = SaveAiSettingsInput {
+        runtime: Some(recommendation.runtime.into()),
+        model: Some(recommendation.model),
+        endpoint: Some(recommendation.endpoint.into()),
+    };
+    with_connection(&state, |connection| {
+        db::save_ai_settings(connection, &input)
+    })
+}
+
+#[tauri::command]
+fn skip_ai_setup(state: State<'_, AppState>) -> Result<AppSettings> {
+    with_connection(&state, |connection| {
+        db::save_ai_settings(
+            connection,
+            &SaveAiSettingsInput {
+                runtime: None,
+                model: None,
+                endpoint: None,
+            },
+        )
+    })
 }
 
 #[tauri::command]
@@ -173,6 +212,9 @@ pub fn run() {
             get_settings,
             list_currencies,
             update_settings,
+            ai_recommendation,
+            setup_recommended_ai,
+            skip_ai_setup,
             list_activity,
             list_holdings,
             income_summary,

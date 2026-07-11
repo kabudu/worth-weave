@@ -34,6 +34,20 @@ export type ImportResult = z.infer<typeof importResultSchema>;
 const appSettingsSchema = z.object({
   reporting_currency: z.string().regex(/^[A-Z]{3}$/).nullable(),
   onboarding_complete: z.boolean(),
+  ai_onboarding_complete: z.boolean(),
+  ai_runtime: z.string().nullable(),
+  ai_model: z.string().nullable(),
+  ai_endpoint: z.string().url().nullable(),
+});
+
+const aiRecommendationSchema = z.object({
+  runtime: z.enum(["rapid-mlx", "ollama"]),
+  runtime_name: z.string().min(1),
+  model: z.string().min(1),
+  endpoint: z.string().url(),
+  rationale: z.string().min(1),
+  installed: z.boolean(),
+  supported: z.boolean(),
 });
 
 const currencyOptionSchema = z.object({
@@ -44,6 +58,7 @@ const currencyOptionSchema = z.object({
 
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 export type CurrencyOption = z.infer<typeof currencyOptionSchema>;
+export type AiRecommendation = z.infer<typeof aiRecommendationSchema>;
 
 const exactString = z.string().regex(/^-?\d+(?:\.\d+)?$/);
 const activityEventSchema = z.object({
@@ -111,6 +126,19 @@ export async function updateSettings(reportingCurrency: string): Promise<AppSett
   return appSettingsSchema.parse(await invoke("update_settings", {
     input: { reporting_currency: reportingCurrency },
   }));
+}
+
+export async function getAiRecommendation(signal?: AbortSignal): Promise<AiRecommendation> {
+  signal?.throwIfAborted();
+  return aiRecommendationSchema.parse(await invoke("ai_recommendation"));
+}
+
+export async function setupRecommendedAi(): Promise<AppSettings> {
+  return appSettingsSchema.parse(await invoke("setup_recommended_ai"));
+}
+
+export async function skipAiSetup(): Promise<AppSettings> {
+  return appSettingsSchema.parse(await invoke("skip_ai_setup"));
 }
 
 export async function getActivity(signal?: AbortSignal): Promise<ActivityEvent[]> {

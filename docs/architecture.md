@@ -33,6 +33,8 @@ React UI <- typed Tauri IPC <- deterministic views <----+
 
 The application creates a singleton settings record during database initialization. Until a supported ISO reporting currency is selected, the interface remains in onboarding. The same backend-owned currency catalogue and validation path power the onboarding and Settings screens. A currency change invalidates reporting views while leaving broker-native currencies and exact values untouched.
 
+The second onboarding step inspects only coarse local hardware characteristics needed for model sizing. Apple Silicon devices receive a pinned Rapid-MLX recommendation derived from its published unified-memory tiers; other devices receive an Ollama fallback. The user must explicitly approve runtime/model setup, which may download several gigabytes, or can continue without AI. The selected runtime, model and loopback endpoint are stored locally. Portfolio calculations remain deterministic application code; models may only explain application-produced analytics.
+
 ## Valuation provenance
 
 Market prices and FX rates are stored as exact coefficients and scales with their observation time and source. Manual entries are explicitly labelled `manual`. Direct and inverse FX pairs are supported. Consolidated portfolio value is returned only when every open holding has a price and every required reporting-currency conversion is available; missing inputs are counted and surfaced rather than treated as zero.

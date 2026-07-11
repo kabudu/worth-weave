@@ -111,6 +111,10 @@ pub fn open(path: &Path) -> Result<Connection> {
            id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
            reporting_currency TEXT,
            onboarding_complete INTEGER NOT NULL DEFAULT 0 CHECK (onboarding_complete IN (0, 1)),
+           ai_onboarding_complete INTEGER NOT NULL DEFAULT 0 CHECK (ai_onboarding_complete IN (0, 1)),
+           ai_runtime TEXT,
+           ai_model TEXT,
+           ai_endpoint TEXT,
            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
          INSERT OR IGNORE INTO app_settings (id) VALUES (1);
@@ -175,6 +179,29 @@ pub fn open(path: &Path) -> Result<Connection> {
            total_scale INTEGER NOT NULL
          );",
     )?;
+    for (column, definition) in [
+        (
+            "ai_onboarding_complete",
+            "INTEGER NOT NULL DEFAULT 0 CHECK (ai_onboarding_complete IN (0, 1))",
+        ),
+        ("ai_runtime", "TEXT"),
+        ("ai_model", "TEXT"),
+        ("ai_endpoint", "TEXT"),
+    ] {
+        let exists = {
+            let mut statement = connection.prepare("PRAGMA table_info(app_settings)")?;
+            statement
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+                .iter()
+                .any(|name| name == column)
+        };
+        if !exists {
+            connection.execute_batch(&format!(
+                "ALTER TABLE app_settings ADD COLUMN {column} {definition}"
+            ))?;
+        }
+    }
     Ok(connection)
 }
 
@@ -263,16 +290,31 @@ pub fn currencies() -> &'static [CurrencyOption] {
 pub fn settings(connection: &Connection) -> Result<AppSettings> {
     connection
         .query_row(
-            "SELECT reporting_currency, onboarding_complete FROM app_settings WHERE id = 1",
+            "SELECT reporting_currency, onboarding_complete, ai_onboarding_complete, ai_runtime, ai_model, ai_endpoint FROM app_settings WHERE id = 1",
             [],
             |row| {
                 Ok(AppSettings {
                     reporting_currency: row.get(0)?,
                     onboarding_complete: row.get::<_, i64>(1)? == 1,
+                    ai_onboarding_complete: row.get::<_, i64>(2)? == 1,
+                    ai_runtime: row.get(3)?,
+                    ai_model: row.get(4)?,
+                    ai_endpoint: row.get(5)?,
                 })
             },
         )
         .map_err(Into::into)
+}
+
+pub fn save_ai_settings(
+    connection: &Connection,
+    input: &crate::models::SaveAiSettingsInput,
+) -> Result<AppSettings> {
+    connection.execute(
+        "UPDATE app_settings SET ai_onboarding_complete=1, ai_runtime=?1, ai_model=?2, ai_endpoint=?3, updated_at=CURRENT_TIMESTAMP WHERE id=1",
+        params![input.runtime, input.model, input.endpoint],
+    )?;
+    settings(connection)
 }
 
 pub fn update_settings(

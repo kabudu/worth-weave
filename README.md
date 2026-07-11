@@ -2,7 +2,7 @@
 
 Worthweave is a local-first macOS portfolio application that weaves Trading 212 and Interactive Brokers accounts into one coherent view. Financial calculations are deterministic; local language models may explain results but never establish ledger truth.
 
-On first run, onboarding asks for a reporting currency. It is stored locally and can be changed later in Settings without modifying source transactions.
+On first run, onboarding asks for a reporting currency, then recommends an optional local AI runtime and model based on the device. Apple Silicon uses Rapid-MLX RAM tiers; other supported devices use Ollama. Installation and model download happen only after explicit confirmation, can be skipped, and can be revisited in Settings. Reporting currency is stored locally and can be changed later without modifying source transactions.
 
 ## Technology
 

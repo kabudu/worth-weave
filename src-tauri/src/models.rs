@@ -136,3 +136,11 @@ pub struct ValuationSummary {
     pub missing_fx_count: usize,
     pub holdings: Vec<ValuedHolding>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PortfolioSnapshot {
+    pub id: String,
+    pub captured_at: String,
+    pub reporting_currency: String,
+    pub total_value: String,
+}

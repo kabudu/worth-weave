@@ -71,11 +71,15 @@ const valuationSummarySchema = z.object({
     reporting_value: exactString.nullable(), reporting_currency: z.string(),
   })),
 });
+const portfolioSnapshotSchema = z.object({
+  id: z.string().uuid(), captured_at: z.string(), reporting_currency: z.string(), total_value: exactString,
+});
 
 export type ActivityEvent = z.infer<typeof activityEventSchema>;
 export type Holding = z.infer<typeof holdingSchema>;
 export type IncomeSummary = z.infer<typeof incomeSummarySchema>;
 export type ValuationSummary = z.infer<typeof valuationSummarySchema>;
+export type PortfolioSnapshot = z.infer<typeof portfolioSnapshotSchema>;
 
 export async function getPortfolioSummary(signal?: AbortSignal): Promise<PortfolioSummary> {
   signal?.throwIfAborted();
@@ -129,6 +133,15 @@ export async function setMarketPrice(input: { instrument_id: string; price: stri
 
 export async function setFxRate(input: { base_currency: string; quote_currency: string; rate: string }) {
   return invoke("set_fx_rate", { input });
+}
+
+export async function getPortfolioSnapshots(signal?: AbortSignal): Promise<PortfolioSnapshot[]> {
+  signal?.throwIfAborted();
+  return z.array(portfolioSnapshotSchema).parse(await invoke("list_portfolio_snapshots"));
+}
+
+export async function capturePortfolioSnapshot(): Promise<PortfolioSnapshot> {
+  return portfolioSnapshotSchema.parse(await invoke("capture_portfolio_snapshot"));
 }
 
 export async function createAccount(input: {

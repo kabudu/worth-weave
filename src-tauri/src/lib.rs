@@ -9,8 +9,8 @@ use db::AppState;
 use error::{LedgerlyError, Result};
 use models::{
     Account, ActivityEvent, AppSettings, CreateAccountInput, CurrencyOption, FxRate, Holding,
-    ImportResult, IncomeSummary, PortfolioSummary, PriceQuote, SetFxRateInput, SetPriceInput,
-    UpdateSettingsInput, ValuationSummary,
+    ImportResult, IncomeSummary, PortfolioSnapshot, PortfolioSummary, PriceQuote, SetFxRateInput,
+    SetPriceInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Manager, State};
 
@@ -88,6 +88,16 @@ fn portfolio_valuation(state: State<'_, AppState>) -> Result<ValuationSummary> {
 }
 
 #[tauri::command]
+fn capture_portfolio_snapshot(state: State<'_, AppState>) -> Result<PortfolioSnapshot> {
+    with_connection(&state, |connection| market::capture_snapshot(connection))
+}
+
+#[tauri::command]
+fn list_portfolio_snapshots(state: State<'_, AppState>) -> Result<Vec<PortfolioSnapshot>> {
+    with_connection(&state, |connection| market::snapshots(connection))
+}
+
+#[tauri::command]
 fn import_broker_file(
     account_id: String,
     file_path: String,
@@ -133,6 +143,8 @@ pub fn run() {
             set_market_price,
             set_fx_rate,
             portfolio_valuation,
+            capture_portfolio_snapshot,
+            list_portfolio_snapshots,
             import_broker_file
         ])
         .run(tauri::generate_context!())
@@ -263,6 +275,9 @@ mod tests {
         assert_eq!(valuation.total_value.as_deref(), Some("96"));
         assert_eq!(valuation.missing_price_count, 0);
         assert_eq!(valuation.missing_fx_count, 0);
+        let snapshot = market::capture_snapshot(&connection).expect("snapshot");
+        assert_eq!(snapshot.total_value, "96");
+        assert_eq!(market::snapshots(&connection).expect("snapshots").len(), 1);
     }
 
     #[test]

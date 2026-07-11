@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
-import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioSummary, getPortfolioValuation, getSettings } from "./api";
+import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { ImportDialog } from "./ImportDialog";
 import { ActivityView, IncomeView, PortfolioView } from "./ReportingViews";
@@ -58,6 +58,7 @@ export function App() {
   const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal) });
   const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal) });
   const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal) });
+  const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal) });
   const accountCount = summary.data?.account_count ?? 0;
   const importCount = summary.data?.import_count ?? 0;
   const reportingCurrency = settings.data?.reporting_currency ?? "GBP";
@@ -112,7 +113,7 @@ export function App() {
           </div>
         </header>
 
-        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} valuation={valuation.data} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : <>
+        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} valuation={valuation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
             <p className="kicker">Saturday, 11 July</p>

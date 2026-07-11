@@ -166,6 +166,13 @@ pub fn open(path: &Path) -> Result<Connection> {
            as_of TEXT NOT NULL,
            source TEXT NOT NULL,
            PRIMARY KEY (base_currency, quote_currency)
+         );
+         CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+           id TEXT PRIMARY KEY NOT NULL,
+           captured_at TEXT NOT NULL,
+           reporting_currency TEXT NOT NULL,
+           total_coefficient TEXT NOT NULL,
+           total_scale INTEGER NOT NULL
          );",
     )?;
     Ok(connection)

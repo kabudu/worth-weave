@@ -7,9 +7,11 @@ use rust_decimal::Decimal;
 use crate::db;
 use crate::error::{LedgerlyError, Result};
 use crate::models::{
-    FxRate, PriceQuote, SetFxRateInput, SetPriceInput, ValuationSummary, ValuedHolding,
+    FxRate, PortfolioSnapshot, PriceQuote, SetFxRateInput, SetPriceInput, ValuationSummary,
+    ValuedHolding,
 };
 use crate::projections;
+use uuid::Uuid;
 
 fn parse_positive(value: &str, field: &str) -> Result<Decimal> {
     Decimal::from_str(value.trim())
@@ -183,4 +185,55 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
         missing_fx_count,
         holdings: valued,
     })
+}
+
+pub fn capture_snapshot(connection: &Connection) -> Result<PortfolioSnapshot> {
+    let valuation = valuation(connection)?;
+    let total = valuation.total_value.ok_or_else(|| {
+        LedgerlyError::InvalidMarketData(
+            "a snapshot requires prices and FX rates for every open holding".into(),
+        )
+    })?;
+    let total_decimal = Decimal::from_str(&total)
+        .map_err(|_| LedgerlyError::InvalidMarketData("valuation total is invalid".into()))?;
+    let (coefficient, scale) = parts(total_decimal);
+    let snapshot = PortfolioSnapshot {
+        id: Uuid::new_v4().to_string(),
+        captured_at: Utc::now().to_rfc3339(),
+        reporting_currency: valuation.reporting_currency,
+        total_value: total,
+    };
+    connection.execute(
+        "INSERT INTO portfolio_snapshots (id, captured_at, reporting_currency, total_coefficient, total_scale)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![snapshot.id, snapshot.captured_at, snapshot.reporting_currency, coefficient, scale],
+    )?;
+    Ok(snapshot)
+}
+
+pub fn snapshots(connection: &Connection) -> Result<Vec<PortfolioSnapshot>> {
+    let mut statement = connection.prepare(
+        "SELECT id, captured_at, reporting_currency, total_coefficient, total_scale
+         FROM portfolio_snapshots ORDER BY captured_at, id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        let coefficient: String = row.get(3)?;
+        let scale: u32 = row.get(4)?;
+        let total_value = coefficient
+            .parse::<i128>()
+            .map(|value| {
+                Decimal::from_i128_with_scale(value, scale)
+                    .normalize()
+                    .to_string()
+            })
+            .unwrap_or_default();
+        Ok(PortfolioSnapshot {
+            id: row.get(0)?,
+            captured_at: row.get(1)?,
+            reporting_currency: row.get(2)?,
+            total_value,
+        })
+    })?;
+    rows.collect::<std::result::Result<_, _>>()
+        .map_err(Into::into)
 }

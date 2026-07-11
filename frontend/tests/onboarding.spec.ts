@@ -57,6 +57,7 @@ test("completes accessible first-run onboarding", async ({ page }) => {
   await page.getByRole("button", { name: "Close import dialog" }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("switch", { name: /restoring replaces all current portfolio data/i })).not.toBeChecked();
   await expect(page.getByRole("button", { name: "Restore backup" })).toBeDisabled();
   const settingsScan = await new AxeBuilder({ page }).analyze();
   expect(settingsScan.violations).toEqual([]);

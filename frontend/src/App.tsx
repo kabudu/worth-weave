@@ -27,13 +27,14 @@ function BrandMark() {
   );
 }
 
-function StatusOrb({ imports }: { imports: number }) {
-  const progress = imports === 0 ? 8 : Math.min(88, 18 + imports * 12);
+function StatusOrb({ accounts, imports, valued }: { accounts: number; imports: number; valued: boolean }) {
+  const progress = valued ? 100 : imports > 0 ? 66 : accounts > 0 ? 33 : 8;
+  const label = valued ? "valuation ready" : imports > 0 ? "data imported" : accounts > 0 ? "ready to import" : "setup started";
   return (
     <div className="status-orb" style={{ "--progress": `${progress * 3.6}deg` } as CSSProperties}>
       <div>
         <strong>{progress}%</strong>
-        <span>data ready</span>
+        <span>{label}</span>
       </div>
     </div>
   );
@@ -52,20 +53,25 @@ export function App() {
     queryFn: ({ signal }) => getCurrencies(signal),
     staleTime: Infinity,
   });
+  const ready = Boolean(settings.data?.onboarding_complete && settings.data?.ai_onboarding_complete);
   const summary = useQuery({
     queryKey: ["portfolio-summary"],
-    queryFn: ({ signal }) => getPortfolioSummary(signal),
+    queryFn: ({ signal }) => getPortfolioSummary(signal), enabled: ready,
   });
-  const holdings = useQuery({ queryKey: ["holdings"], queryFn: ({ signal }) => getHoldings(signal) });
-  const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal) });
-  const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal) });
-  const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal) });
-  const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal) });
-  const allocation = useQuery({ queryKey: ["allocation"], queryFn: ({ signal }) => getPortfolioAllocation(signal), retry: false });
-  const reconciliation = useQuery({ queryKey: ["reconciliation"], queryFn: ({ signal }) => getPortfolioReconciliation(signal) });
+  const holdings = useQuery({ queryKey: ["holdings"], queryFn: ({ signal }) => getHoldings(signal), enabled: ready && activeView === "Portfolio" });
+  const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal), enabled: ready && activeView === "Activity" });
+  const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal), enabled: ready && activeView === "Income" });
+  const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal), enabled: ready && (activeView === "Overview" || activeView === "Portfolio") });
+  const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal), enabled: ready && activeView === "Portfolio" });
+  const allocation = useQuery({ queryKey: ["allocation"], queryFn: ({ signal }) => getPortfolioAllocation(signal), retry: false, enabled: ready && activeView === "Portfolio" });
+  const reconciliation = useQuery({ queryKey: ["reconciliation"], queryFn: ({ signal }) => getPortfolioReconciliation(signal), enabled: ready && activeView === "Portfolio" });
   const accountCount = summary.data?.account_count ?? 0;
   const importCount = summary.data?.import_count ?? 0;
   const reportingCurrency = settings.data?.reporting_currency ?? "GBP";
+  const now = new Date();
+  const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
+  const dateLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(now);
+  const journeyStep = accountCount === 0 ? 1 : importCount === 0 ? 2 : 3;
 
   if (settings.isPending || currencies.isPending) {
     return <div className="startup-screen"><BrandMark /><span>Preparing your private portfolio…</span></div>;
@@ -81,10 +87,10 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#top" aria-label="Worthweave home">
+        <button className="brand" type="button" onClick={() => setActiveView("Overview")} aria-label="Worthweave home">
           <BrandMark />
           <span>worthweave</span>
-        </a>
+        </button>
         <nav aria-label="Primary navigation">
           {navItems.map(([label, icon]) => (
             <button className={activeView === label ? "active" : ""} type="button" onClick={() => setActiveView(label)} key={label}>
@@ -102,7 +108,7 @@ export function App() {
           </div>
         </div>
         <button className="profile-button" type="button" aria-label="Open local profile settings" onClick={() => setSettingsOpen(true)}>
-          <span className="avatar">KL</span>
+          <span className="avatar">W</span>
           <span><strong>Local portfolio</strong><small>{reportingCurrency} · macOS</small></span>
           <span aria-hidden="true">•••</span>
         </button>
@@ -112,23 +118,21 @@ export function App() {
         <header className="topbar">
           <div className="eyebrow"><span /> Local intelligence</div>
           <div className="top-actions">
-            <button className="icon-button" type="button" aria-label="Search">⌕</button>
-            <button className="icon-button" type="button" aria-label="Notifications">♢</button>
             <button className="primary-button" type="button" onClick={() => setImportOpen(true)}><span>＋</span> Import data</button>
           </div>
         </header>
 
-        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : <>
+        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private local intelligence</span><h1>Portfolio insights</h1><p>Ask questions grounded in Worthweave’s deterministic analytics.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} /></section> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
-            <p className="kicker">Saturday, 11 July</p>
-            <h1 id="welcome-title">Good afternoon.<br /><em>Your wealth, in focus.</em></h1>
+            <p className="kicker">{dateLabel}</p>
+            <h1 id="welcome-title">{greeting}.<br /><em>Your wealth, in focus.</em></h1>
             <p className="hero-copy">
               One calm, trustworthy view across every investment account—calculated locally and
               explained in plain English.
             </p>
           </div>
-          <StatusOrb imports={importCount} />
+          <StatusOrb accounts={accountCount} imports={importCount} valued={Boolean(valuation.data?.total_value)} />
         </section>
 
         {summary.isError && (
@@ -140,16 +144,15 @@ export function App() {
 
         <section className="metric-grid" aria-label="Portfolio readiness">
           <article className="metric-card featured">
-            <div className="metric-heading"><span>Total portfolio</span><span className="status-chip">Awaiting data</span></div>
-            <strong className="metric-value">—</strong>
-            <p>Values appear only after holdings reconcile with your broker exports.</p>
-            <div className="metric-sparkline" aria-hidden="true"><span /><span /><span /><span /><span /><span /></div>
+            <div className="metric-heading"><span>Total portfolio</span><span className="status-chip">{valuation.data?.total_value ? "Valued" : importCount > 0 ? "Needs market data" : "Awaiting data"}</span></div>
+            <strong className="metric-value">{valuation.data?.total_value ? new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_value)) : "—"}</strong>
+            <p>{valuation.data?.total_value ? `${valuation.data.total_gain_loss ? `${new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_gain_loss))} total gain/loss · ` : ""}${valuation.data.stale_price_count + valuation.data.stale_fx_count} stale inputs` : "Add complete prices and FX rates to calculate a truthful total."}</p>
           </article>
           <article className="metric-card">
             <div className="metric-icon violet">◈</div>
             <span>Accounts</span>
             <strong className="metric-value small">{summary.isPending ? "…" : accountCount}</strong>
-            <p>Trading 212 ISA · IBKR Invest · IBKR ISA</p>
+            <p>{accountCount === 0 ? "Create separate Invest and ISA accounts" : `${accountCount} local account${accountCount === 1 ? "" : "s"} configured`}</p>
           </article>
           <article className="metric-card">
             <div className="metric-icon amber">↗</div>
@@ -163,12 +166,12 @@ export function App() {
           <article className="journey-card" id="portfolio">
             <div className="section-heading">
               <div><span className="section-kicker">Get started</span><h2>Build your complete picture</h2></div>
-              <span className="step-count">01 / 03</span>
+              <span className="step-count">0{journeyStep} / 03</span>
             </div>
             <div className="journey-steps">
-              <div className="journey-step current"><span>1</span><div><strong>Create your accounts</strong><p>Keep Invest and ISA histories safely separated.</p></div><button type="button" onClick={() => setImportOpen(true)}>Begin <span>→</span></button></div>
-              <div className="journey-step"><span>2</span><div><strong>Import broker history</strong><p>Drop in CSV files now and add later periods anytime.</p></div><small>Next</small></div>
-              <div className="journey-step"><span>3</span><div><strong>Reconcile and explore</strong><p>Worthweave checks holdings before showing performance.</p></div><small>Then</small></div>
+              <div className={`journey-step ${journeyStep === 1 ? "current" : "complete"}`}><span>{journeyStep > 1 ? "✓" : "1"}</span><div><strong>Create your accounts</strong><p>Keep Invest and ISA histories safely separated.</p></div>{journeyStep === 1 ? <button type="button" onClick={() => setImportOpen(true)}>Begin <span>→</span></button> : <small>Done</small>}</div>
+              <div className={`journey-step ${journeyStep === 2 ? "current" : journeyStep > 2 ? "complete" : ""}`}><span>{journeyStep > 2 ? "✓" : "2"}</span><div><strong>Import broker history</strong><p>Drop in CSV files now and add later periods anytime.</p></div>{journeyStep === 2 ? <button type="button" onClick={() => setImportOpen(true)}>Import <span>→</span></button> : <small>{journeyStep > 2 ? "Done" : "Next"}</small>}</div>
+              <div className={`journey-step ${journeyStep === 3 ? "current" : ""}`}><span>3</span><div><strong>Reconcile and explore</strong><p>Worthweave checks holdings before showing performance.</p></div>{journeyStep === 3 ? <button type="button" onClick={() => setActiveView("Portfolio")}>Explore <span>→</span></button> : <small>Then</small>}</div>
             </div>
           </article>
 
@@ -176,7 +179,7 @@ export function App() {
         </section>
         </>}
 
-        <footer><span>Worthweave · Local mode</span><span>Deterministic ledger <i /> Private AI ready</span></footer>
+        <footer><span>Worthweave · Local mode</span><span>Deterministic ledger <i /> {settings.data.ai_runtime ? "Private AI configured" : "Private AI optional"}</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
         <SettingsDialog currencies={currencies.data} currentCurrency={reportingCurrency} aiRuntime={settings.data.ai_runtime} aiModel={settings.data.ai_model} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </main>

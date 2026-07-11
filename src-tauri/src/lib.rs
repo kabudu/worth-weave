@@ -102,12 +102,15 @@ async fn explain_portfolio(
     input: ExplainPortfolioInput,
     state: State<'_, AppState>,
 ) -> Result<PortfolioExplanation> {
-    let (endpoint, model, analytics) = with_connection(&state, |connection| {
+    let (runtime, endpoint, model, analytics) = with_connection(&state, |connection| {
         let settings = db::settings(connection)?;
         let endpoint = settings.ai_endpoint.ok_or_else(|| {
             LedgerlyError::LocalAi("local AI is not configured in Settings".into())
         })?;
         let model = settings.ai_model.ok_or_else(|| {
+            LedgerlyError::LocalAi("local AI is not configured in Settings".into())
+        })?;
+        let runtime = settings.ai_runtime.ok_or_else(|| {
             LedgerlyError::LocalAi("local AI is not configured in Settings".into())
         })?;
         let analytics = serde_json::json!({
@@ -117,9 +120,9 @@ async fn explain_portfolio(
             "income": projections::income(connection)?,
             "snapshots": market::snapshots(connection)?,
         });
-        Ok((endpoint, model, analytics.to_string()))
+        Ok((runtime, endpoint, model, analytics.to_string()))
     })?;
-    ai::explain(&endpoint, &model, &input.question, &analytics).await
+    ai::explain(&runtime, &endpoint, &model, &input.question, &analytics).await
 }
 
 #[tauri::command]
@@ -240,6 +243,11 @@ pub fn run() {
                 .app_local_data_dir()
                 .map_err(|_| LedgerlyError::DataDirectoryUnavailable)?;
             std::fs::create_dir_all(&data_dir)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o700))?;
+            }
             let connection = db::open(&data_dir.join("worthweave.db"))?;
             app.manage(AppState {
                 connection: std::sync::Mutex::new(connection),
@@ -287,6 +295,15 @@ mod tests {
     fn database_starts_empty_and_persists_accounts() {
         let directory = tempdir().expect("temp directory");
         let connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(directory.path().join("worthweave.db"))
+                .expect("database metadata")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o077, 0);
+        }
 
         let initial = db::summary(&connection).expect("summary");
         assert_eq!(

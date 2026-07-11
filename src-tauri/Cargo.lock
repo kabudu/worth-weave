@@ -5423,6 +5423,7 @@ dependencies = [
  "age",
  "chrono",
  "csv",
+ "futures-util",
  "reqwest",
  "rusqlite",
  "rust_decimal",
@@ -5434,6 +5435,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "uuid",
 ]
 

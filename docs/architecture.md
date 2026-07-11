@@ -41,7 +41,11 @@ Manual market prices and FX rates retain source and RFC 3339 timestamps. Prices 
 
 Local explanations use the OpenAI-compatible loopback endpoint of the configured runtime. Worthweave serializes only its deterministic valuation, allocation, reconciliation, income, and snapshot outputs. Requests reject non-loopback endpoints, limit question length and response size, use low temperature, and instruct the model not to calculate, predict, invent missing values, or provide personalised financial advice. Model text is never persisted into the ledger.
 
+Configured AI runtimes start on demand when a question is asked rather than at application startup. Worthweave probes the local `/models` endpoint with one-second health-request bounds, starts the pinned runtime if required, and allows at most 20 seconds for readiness before returning a clear error. This avoids persistent model memory/CPU use when AI is not in use.
+
 Allocation is calculated from the same complete reporting-currency valuation by platform, account, asset class, sector, geography, and source currency. IBKR asset classes are imported where supplied; missing classifications remain visibly `Unclassified` until the user adds local metadata. Metadata edits affect grouping only and never alter broker events or financial values.
+
+Schema version 5 adds projection, activity, import, and latest-position indexes. Import de-duplication relies on SQLite uniqueness inside the transaction instead of loading every historical source identifier into memory. The frontend defers account and reporting queries until onboarding is complete and the relevant view is opened. Backup/export paths are streaming, so memory use no longer scales with the entire SQLite database size.
 
 ## Valuation provenance
 

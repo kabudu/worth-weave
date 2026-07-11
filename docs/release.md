@@ -12,3 +12,5 @@ Worthweave produces a native `.app` and `.dmg` through Tauri. Local verification
 6. For public release, configure the Developer ID certificate and Apple notarisation credentials documented by Tauri, rebuild, submit the DMG for notarisation, staple the ticket, and repeat the verification checks.
 
 Never commit certificates, App Store Connect keys, passwords, broker exports, or notarisation credentials.
+
+TypeScript is pinned to the newest release supported by the current TypeScript-ESLint peer range. Do not advance it across that compatibility boundary until the parser/plugin declares support.

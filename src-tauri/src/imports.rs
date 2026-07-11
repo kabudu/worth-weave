@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -14,6 +15,7 @@ use crate::error::{LedgerlyError, Result};
 use crate::models::ImportResult;
 
 const MAX_IMPORT_BYTES: u64 = 50 * 1024 * 1024;
+const MAX_IMPORT_ROWS: usize = 500_000;
 
 #[derive(Debug)]
 struct Event {
@@ -513,15 +515,18 @@ pub fn import_csv(
     {
         return Err(LedgerlyError::UnsupportedFile);
     }
-    if std::fs::metadata(path)?.len() > MAX_IMPORT_BYTES {
-        return Err(LedgerlyError::ImportTooLarge);
-    }
     let (broker, account_type) =
         db::account_identity(connection, account_id)?.ok_or(LedgerlyError::AccountNotFound)?;
     if account_type != confirmed_account_type {
         return Err(LedgerlyError::AccountTypeMismatch);
     }
-    let content = std::fs::read(path)?;
+    let mut content = Vec::new();
+    std::fs::File::open(path)?
+        .take(MAX_IMPORT_BYTES + 1)
+        .read_to_end(&mut content)?;
+    if content.len() as u64 > MAX_IMPORT_BYTES {
+        return Err(LedgerlyError::ImportTooLarge);
+    }
     let digest = hex(&Sha256::digest(&content));
     let duplicate: Option<String> = connection
         .query_row(
@@ -538,21 +543,36 @@ pub fn import_csv(
     } else {
         parse_ibkr(&content)?
     };
-    let existing: HashSet<String> = {
-        let mut statement =
-            connection.prepare("SELECT source_id FROM events WHERE account_id = ?1")?;
-        statement
-            .query_map([account_id], |row| row.get(0))?
-            .collect::<std::result::Result<_, _>>()?
-    };
-    let new_events: Vec<_> = parsed
-        .events
-        .into_iter()
-        .filter(|event| !existing.contains(&event.source_id))
-        .collect();
+    if parsed.events.len().saturating_add(parsed.positions.len()) > MAX_IMPORT_ROWS {
+        return Err(LedgerlyError::ImportRowLimit);
+    }
+    for event in &parsed.events {
+        if event.source_id.chars().count() > 512
+            || event.description.chars().count() > 4096
+            || event
+                .instrument_id
+                .as_ref()
+                .is_some_and(|value| value.chars().count() > 128)
+        {
+            return Err(LedgerlyError::Csv(
+                "import contains an oversized identifier or description".into(),
+            ));
+        }
+    }
+    if parsed
+        .positions
+        .iter()
+        .any(|position| position.instrument_id.chars().count() > 128)
+    {
+        return Err(LedgerlyError::Csv(
+            "import contains an oversized instrument identifier".into(),
+        ));
+    }
+    let new_events = parsed.events;
     let batch_id = Uuid::new_v4().to_string();
     let transaction = connection.transaction()?;
     transaction.execute("INSERT INTO import_batches (id, account_id, original_filename, content_sha256, coverage_start, coverage_end) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![batch_id, account_id, path.file_name().and_then(|value| value.to_str()).unwrap_or("broker-export.csv"), digest, parsed.start.to_string(), parsed.end.to_string()])?;
+    let mut events_added = 0;
     for event in &new_events {
         if let Some(instrument_id) = &event.instrument_id {
             transaction.execute(
@@ -565,7 +585,7 @@ pub fn import_csv(
                 params![instrument_id, event.symbol, event.name, instrument_id, event.asset_class],
             )?;
         }
-        transaction.execute("INSERT INTO events (id, account_id, import_batch_id, source_id, event_type, occurred_at, description, amount_coefficient, amount_scale, currency, quantity_coefficient, quantity_scale, instrument_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)", params![Uuid::new_v4().to_string(), account_id, batch_id, event.source_id, event.event_type, event.occurred_at, event.description, event.amount.as_ref().map(|value| &value.coefficient), event.amount.as_ref().map(|value| value.scale), event.currency, event.quantity.as_ref().map(|value| &value.coefficient), event.quantity.as_ref().map(|value| value.scale), event.instrument_id])?;
+        events_added += transaction.execute("INSERT OR IGNORE INTO events (id, account_id, import_batch_id, source_id, event_type, occurred_at, description, amount_coefficient, amount_scale, currency, quantity_coefficient, quantity_scale, instrument_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)", params![Uuid::new_v4().to_string(), account_id, batch_id, event.source_id, event.event_type, event.occurred_at, event.description, event.amount.as_ref().map(|value| &value.coefficient), event.amount.as_ref().map(|value| value.scale), event.currency, event.quantity.as_ref().map(|value| &value.coefficient), event.quantity.as_ref().map(|value| value.scale), event.instrument_id])?;
     }
     for position in &parsed.positions {
         transaction.execute(
@@ -583,12 +603,9 @@ pub fn import_csv(
             ],
         )?;
         transaction.execute(
-            "INSERT INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale)
+            "INSERT OR IGNORE INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT(account_id, report_date, instrument_id) DO UPDATE SET
-               import_batch_id=excluded.import_batch_id,
-               quantity_coefficient=excluded.quantity_coefficient,
-               quantity_scale=excluded.quantity_scale",
+             ",
             params![
                 Uuid::new_v4().to_string(), account_id, batch_id,
                 position.report_date.to_string(), position.instrument_id,
@@ -601,7 +618,7 @@ pub fn import_csv(
         batch_id,
         coverage_start: parsed.start.to_string(),
         coverage_end: parsed.end.to_string(),
-        events_added: new_events.len(),
+        events_added,
         warnings: parsed.warnings,
     })
 }
@@ -666,6 +683,33 @@ mod tests {
                 scale: 1
             }
         );
+    }
+
+    #[test]
+    fn ibkr_import_persists_reconcilable_positions_atomically() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        let account = db::create_account(
+            &connection,
+            &crate::models::CreateAccountInput {
+                broker: "ibkr".into(),
+                account_type: "invest".into(),
+                display_name: "IBKR Invest".into(),
+            },
+        )
+        .expect("account");
+        let path = directory.path().join("ibkr.csv");
+        std::fs::write(
+            &path,
+            "ClientAccountID,CurrencyPrimary,TradeID,Buy/Sell,TradeMoney,Date/Time,Quantity,NetCash,Description,Symbol,ISIN,AssetClass\nU1,GBP,T1,BUY,20.00,2026-07-01;10:00:00,2,-20.00,Example holding,TEST,GB00TEST0001,STK\nClientAccountID,CurrencyPrimary,ReportDate,Quantity,MarkPrice,PositionValue,CostBasisMoney,LevelOfDetail,Symbol,Description,ISIN,Conid,AssetClass\nU1,GBP,2026-07-10,2,10,20,20,Summary,TEST,Example holding,GB00TEST0001,123,STK\n",
+        )
+        .expect("export");
+        let result = import_csv(&mut connection, &account.id, &path, "invest").expect("import");
+        assert_eq!(result.events_added, 1);
+        let reconciliation =
+            crate::projections::reconciliation(&connection).expect("reconciliation");
+        assert_eq!(reconciliation.len(), 1);
+        assert_eq!(reconciliation[0].status, "matched");
     }
 
     #[test]

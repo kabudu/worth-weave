@@ -21,6 +21,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("completes accessible first-run onboarding", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /make every number/i })).toBeVisible();
   const firstScan = await new AxeBuilder({ page }).analyze();
@@ -30,4 +33,24 @@ test("completes accessible first-run onboarding", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /private insight/i })).toBeVisible();
   await page.getByRole("button", { name: /continue without ai/i }).click();
   await expect(page.getByRole("heading", { name: /your wealth, in focus/i })).toBeVisible();
+  const dashboardScan = await new AxeBuilder({ page }).analyze();
+  expect(dashboardScan.violations).toEqual([]);
+  await page.getByRole("button", { name: "Insights", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Portfolio insights" })).toBeVisible();
+  await page.getByRole("button", { name: /import data/i }).click();
+  await expect(page.getByRole("heading", { name: /add portfolio data/i })).toBeVisible();
+  const dialogScan = await new AxeBuilder({ page }).analyze();
+  expect(dialogScan.violations).toEqual([]);
+  await page.getByRole("button", { name: "Close import dialog" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restore backup" })).toBeDisabled();
+  const settingsScan = await new AxeBuilder({ page }).analyze();
+  expect(settingsScan.violations).toEqual([]);
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await page.getByRole("button", { name: "Portfolio", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your holdings" })).toBeVisible();
+  const portfolioScan = await new AxeBuilder({ page }).analyze();
+  expect(portfolioScan.violations).toEqual([]);
+  expect(browserErrors).toEqual([]);
 });

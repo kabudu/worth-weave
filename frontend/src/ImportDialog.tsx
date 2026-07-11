@@ -21,7 +21,7 @@ type ImportDialogProps = {
 export function ImportDialog({ open, onClose }: ImportDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const queryClient = useQueryClient();
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: ({ signal }) => getAccounts(signal) });
+  const accounts = useQuery({ queryKey: ["accounts"], queryFn: ({ signal }) => getAccounts(signal), enabled: open });
   const [selectedId, setSelectedId] = useState("");
   const [broker, setBroker] = useState<Broker>("trading_212");
   const [accountType, setAccountType] = useState<AccountType>("stocks_and_shares_isa");
@@ -58,6 +58,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
         queryClient.invalidateQueries({ queryKey: ["income"] }),
         queryClient.invalidateQueries({ queryKey: ["valuation"] }),
         queryClient.invalidateQueries({ queryKey: ["allocation"] }),
+        queryClient.invalidateQueries({ queryKey: ["reconciliation"] }),
       ]);
     },
   });
@@ -103,7 +104,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
           <p>{result.events_added.toLocaleString()} canonical events added.</p>
           <dl><div><dt>Coverage starts</dt><dd>{result.coverage_start}</dd></div><div><dt>Coverage ends</dt><dd>{result.coverage_end}</dd></div></dl>
           {result.warnings.map((warning) => <small key={warning}>{warning}</small>)}
-          <button className="primary-button" type="button" onClick={close}>Return to overview</button>
+          <button className="primary-button" type="button" onClick={close}>Done</button>
         </section>
       ) : (
         <div className="dialog-columns">

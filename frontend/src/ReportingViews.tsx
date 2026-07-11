@@ -14,7 +14,7 @@ function brokerName(broker: "trading_212" | "ibkr") {
 }
 
 function EmptyState({ title, copy }: { title: string; copy: string }) {
-  return <div className="report-empty"><span>◇</span><h3>{title}</h3><p>{copy}</p></div>;
+  return <div className="report-empty"><span>◇</span><h2>{title}</h2><p>{copy}</p></div>;
 }
 
 type PortfolioProps = {

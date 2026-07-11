@@ -101,7 +101,7 @@ export function SettingsDialog({ currencies, currentCurrency, open, onClose, aiR
         <div><h3>Reporting currency</h3><p>Changes how consolidated portfolio values are presented. Source transactions are never rewritten.</p></div>
         <CurrencyForm currencies={currencies} initialCurrency={currentCurrency} onSaved={onClose} submitLabel="Save changes" />
       </section>
-      <AiSettingsPanel runtime={aiRuntime} model={aiModel} />
+      {open && <AiSettingsPanel runtime={aiRuntime} model={aiModel} />}
       <BackupPanel />
     </dialog>
   );
@@ -111,6 +111,7 @@ function BackupPanel() {
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
+  const [confirmRestore, setConfirmRestore] = useState(false);
   const backupMutation = useMutation({ mutationFn: async () => {
     const path = await saveFileDialog({ defaultPath: "worthweave-backup.age", filters: [{ name: "Worthweave encrypted backup", extensions: ["age"] }] });
     if (path) await createEncryptedBackup(path, password);
@@ -120,12 +121,12 @@ function BackupPanel() {
     const path = await openFileDialog({ multiple: false, directory: false, filters: [{ name: "Worthweave encrypted backup", extensions: ["age"] }] });
     if (path) await restoreEncryptedBackup(path, password);
     return path;
-  }, onSuccess: async (path) => { if (path) { setStatus("Backup restored."); setPassword(""); await queryClient.invalidateQueries(); } } });
+  }, onSuccess: async (path) => { if (path) { setStatus("Backup restored."); setPassword(""); setConfirmRestore(false); await queryClient.invalidateQueries(); } } });
   const exportMutation = useMutation({ mutationFn: async () => {
     const path = await saveFileDialog({ defaultPath: "worthweave-portfolio.json", filters: [{ name: "Worthweave portfolio export", extensions: ["json"] }] });
     if (path) await exportPortfolioJson(path);
     return path;
   }, onSuccess: (path) => { if (path) setStatus("Portfolio report exported."); } });
   const busy = backupMutation.isPending || restoreMutation.isPending;
-  return <section className="backup-settings"><div><h3>Export &amp; encrypted backup</h3><p>Export a readable portfolio report, or create and restore a complete encrypted backup. Backup passwords cannot be recovered.</p></div><div><label>Backup password<input type="password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="At least 12 characters" /></label><div className="backup-actions"><button type="button" className="secondary-button" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate()}>Export JSON</button><button type="button" className="secondary-button" disabled={password.length < 12 || busy} onClick={() => backupMutation.mutate()}>Create backup</button><button type="button" className="secondary-button" disabled={password.length < 12 || busy} onClick={() => restoreMutation.mutate()}>Restore backup</button></div>{status && <small className="backup-success">{status}</small>}{(backupMutation.isError || restoreMutation.isError || exportMutation.isError) && <small className="form-error">{String(backupMutation.error ?? restoreMutation.error ?? exportMutation.error)}</small>}</div></section>;
+  return <section className="backup-settings"><div><h3>Export &amp; encrypted backup</h3><p>Export a readable portfolio report, or create and restore a complete encrypted backup. Backup passwords cannot be recovered.</p></div><div><label>Backup password<input type="password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="At least 12 characters" /></label><label className="restore-confirm"><input type="checkbox" checked={confirmRestore} onChange={(event) => setConfirmRestore(event.target.checked)} /> I understand restoring replaces all current portfolio data.</label><div className="backup-actions"><button type="button" className="secondary-button" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate()}>Export JSON</button><button type="button" className="secondary-button" disabled={password.length < 12 || busy} onClick={() => backupMutation.mutate()}>Create backup</button><button type="button" className="secondary-button danger-button" disabled={password.length < 12 || busy || !confirmRestore} onClick={() => restoreMutation.mutate()}>Restore backup</button></div>{status && <small className="backup-success">{status}</small>}{(backupMutation.isError || restoreMutation.isError || exportMutation.isError) && <small className="form-error">{String(backupMutation.error ?? restoreMutation.error ?? exportMutation.error)}</small>}</div></section>;
 }

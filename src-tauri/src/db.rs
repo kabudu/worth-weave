@@ -103,6 +103,11 @@ pub struct AppState {
 
 pub fn open(path: &Path) -> Result<Connection> {
     let connection = Connection::open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
     connection.execute_batch(
         "PRAGMA foreign_keys = ON;
          PRAGMA journal_mode = WAL;
@@ -197,7 +202,12 @@ pub fn open(path: &Path) -> Result<Connection> {
            quantity_coefficient TEXT NOT NULL,
            quantity_scale INTEGER NOT NULL,
            UNIQUE (account_id, report_date, instrument_id)
-         );",
+         );
+         CREATE INDEX IF NOT EXISTS idx_events_projection
+           ON events (account_id, instrument_id, event_type, occurred_at, id);
+         CREATE INDEX IF NOT EXISTS idx_events_activity ON events (occurred_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_import_batches_account ON import_batches (account_id, imported_at);
+         CREATE INDEX IF NOT EXISTS idx_broker_positions_latest ON broker_position_snapshots (account_id, report_date DESC);",
     )?;
     for (column, definition) in [
         (
@@ -251,14 +261,14 @@ pub fn open(path: &Path) -> Result<Connection> {
            (1, 'initial_local_ledger'),
            (2, 'adaptive_ai_settings'),
            (3, 'broker_reconciliation_and_instruments'),
-           (4, 'instrument_classification');
-         PRAGMA user_version = 4;",
+           (4, 'instrument_classification'),
+           (5, 'reporting_indexes');
+         PRAGMA user_version = 5;",
     )?;
     Ok(connection)
 }
 
-#[cfg(test)]
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 #[cfg(test)]
 pub fn schema_version(connection: &Connection) -> Result<i64> {

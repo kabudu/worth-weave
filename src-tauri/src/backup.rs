@@ -5,9 +5,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use age::secrecy::SecretString;
-use rusqlite::{Connection, backup::Backup};
+use rusqlite::{Connection, OptionalExtension, backup::Backup};
 use serde::Serialize;
-use uuid::Uuid;
 
 use crate::error::{LedgerlyError, Result};
 use crate::{db, market, projections};
@@ -23,10 +22,21 @@ fn validate(path: &Path, password: &str) -> Result<()> {
     if path.as_os_str().is_empty() {
         return Err(LedgerlyError::Backup("backup path is required".into()));
     }
+    let valid_extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| {
+            value.eq_ignore_ascii_case("age") || value.eq_ignore_ascii_case("worthweave-age")
+        });
+    if !valid_extension {
+        return Err(LedgerlyError::Backup(
+            "encrypted backups must use the .age extension".into(),
+        ));
+    }
     Ok(())
 }
 
-fn database_bytes(connection: &Connection) -> Result<Vec<u8>> {
+fn database_snapshot(connection: &Connection) -> Result<tempfile::NamedTempFile> {
     let file = tempfile::NamedTempFile::new()?;
     let mut destination = Connection::open(file.path())?;
     Backup::new(connection, &mut destination)?.run_to_completion(
@@ -35,25 +45,41 @@ fn database_bytes(connection: &Connection) -> Result<Vec<u8>> {
         None,
     )?;
     drop(destination);
-    fs::read(file.path()).map_err(Into::into)
+    Ok(file)
+}
+
+fn destination_temp(path: &Path) -> Result<tempfile::NamedTempFile> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    tempfile::Builder::new()
+        .prefix(".worthweave-")
+        .tempfile_in(parent)
+        .map_err(Into::into)
+}
+
+fn persist(temp: tempfile::NamedTempFile, path: &Path) -> Result<()> {
+    temp.persist(path)
+        .map(|_| ())
+        .map_err(|error| LedgerlyError::Io(error.error))
 }
 
 pub fn create(connection: &Connection, path: &Path, password: String) -> Result<()> {
     validate(path, &password)?;
-    let plaintext = database_bytes(connection)?;
+    let plaintext = database_snapshot(connection)?;
     let encryptor = age::Encryptor::with_user_passphrase(SecretString::from(password));
-    let mut encrypted = Vec::new();
+    let mut encrypted = destination_temp(path)?;
     let mut writer = encryptor
-        .wrap_output(&mut encrypted)
+        .wrap_output(encrypted.as_file_mut())
         .map_err(|error| LedgerlyError::Backup(error.to_string()))?;
-    writer.write_all(&plaintext)?;
+    let mut source = fs::File::open(plaintext.path())?;
+    std::io::copy(&mut source, &mut writer)?;
     writer
         .finish()
         .map_err(|error| LedgerlyError::Backup(error.to_string()))?;
-    let temporary = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
-    fs::write(&temporary, encrypted)?;
-    fs::rename(&temporary, path)?;
-    Ok(())
+    encrypted.as_file().sync_all()?;
+    persist(encrypted, path)
 }
 
 pub fn restore(connection: &mut Connection, path: &Path, password: String) -> Result<()> {
@@ -63,29 +89,44 @@ pub fn restore(connection: &mut Connection, path: &Path, password: String) -> Re
             "backup exceeds the 1 GiB restore limit".into(),
         ));
     }
-    let encrypted = fs::read(path)?;
-    let decryptor = age::Decryptor::new(&encrypted[..])
-        .map_err(|error| LedgerlyError::Backup(error.to_string()))?;
+    let encrypted = fs::File::open(path)?;
+    let decryptor =
+        age::Decryptor::new(encrypted).map_err(|error| LedgerlyError::Backup(error.to_string()))?;
     let identity = age::scrypt::Identity::new(SecretString::from(password));
     let reader = decryptor
         .decrypt(iter::once(&identity as _))
         .map_err(|_| LedgerlyError::Backup("password is incorrect or backup is damaged".into()))?;
-    let mut plaintext = Vec::new();
-    reader
-        .take(MAX_BACKUP_BYTES + 1)
-        .read_to_end(&mut plaintext)?;
-    if plaintext.len() as u64 > MAX_BACKUP_BYTES {
+    let mut file = tempfile::NamedTempFile::new()?;
+    let copied = std::io::copy(&mut reader.take(MAX_BACKUP_BYTES + 1), file.as_file_mut())?;
+    if copied > MAX_BACKUP_BYTES {
         return Err(LedgerlyError::Backup(
             "decrypted backup exceeds the restore limit".into(),
         ));
     }
-    let file = tempfile::NamedTempFile::new()?;
-    fs::write(file.path(), plaintext)?;
+    file.as_file_mut().flush()?;
     let source = Connection::open(file.path())?;
     let integrity: String = source.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
     if integrity != "ok" {
         return Err(LedgerlyError::Backup(
             "backup database failed integrity validation".into(),
+        ));
+    }
+    let version: i64 = source.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if !(1..=db::SCHEMA_VERSION).contains(&version) {
+        return Err(LedgerlyError::Backup(
+            "backup schema version is not supported by this Worthweave release".into(),
+        ));
+    }
+    let foreign_key_violation: Option<i64> = source
+        .query_row(
+            "SELECT 1 FROM pragma_foreign_key_check LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if foreign_key_violation.is_some() {
+        return Err(LedgerlyError::Backup(
+            "backup contains invalid account relationships".into(),
         ));
     }
     source
@@ -115,6 +156,15 @@ pub fn export_json(connection: &Connection, path: &Path) -> Result<()> {
     if path.as_os_str().is_empty() {
         return Err(LedgerlyError::Backup("export path is required".into()));
     }
+    if !path
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("json"))
+    {
+        return Err(LedgerlyError::Backup(
+            "portfolio exports must use the .json extension".into(),
+        ));
+    }
     let export = PortfolioExport {
         format: "worthweave-portfolio-export",
         version: 1,
@@ -126,10 +176,10 @@ pub fn export_json(connection: &Connection, path: &Path) -> Result<()> {
         valuation: market::valuation(connection)?,
         snapshots: market::snapshots(connection)?,
     };
-    let data = serde_json::to_vec_pretty(&export)
+    let mut temporary = destination_temp(path)?;
+    serde_json::to_writer_pretty(temporary.as_file_mut(), &export)
         .map_err(|error| LedgerlyError::Backup(error.to_string()))?;
-    let temporary = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
-    fs::write(&temporary, data)?;
-    fs::rename(&temporary, path)?;
-    Ok(())
+    temporary.as_file_mut().flush()?;
+    temporary.as_file().sync_all()?;
+    persist(temporary, path)
 }

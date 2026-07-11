@@ -16,6 +16,8 @@ pub enum LedgerlyError {
     DuplicateImport,
     #[error("import exceeds the 50 MiB size limit")]
     ImportTooLarge,
+    #[error("import contains too many rows")]
+    ImportRowLimit,
     #[error("only CSV imports are accepted")]
     UnsupportedFile,
     #[error("invalid account details: {0}")]

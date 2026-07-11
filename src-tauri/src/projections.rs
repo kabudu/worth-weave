@@ -187,9 +187,10 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
     let holdings = holdings(connection)?;
     let mut broker = BTreeMap::new();
     let mut statement = connection.prepare(
-        "SELECT p.account_id, p.instrument_id, p.report_date,
+        "SELECT p.account_id, p.instrument_id, p.report_date, a.display_name,
                 p.quantity_coefficient, p.quantity_scale
          FROM broker_position_snapshots p
+         JOIN accounts a ON a.id=p.account_id
          JOIN (
            SELECT account_id, MAX(report_date) AS report_date
            FROM broker_position_snapshots GROUP BY account_id
@@ -200,7 +201,8 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
             (row.get::<_, String>(0)?, row.get::<_, String>(1)?),
             (
                 row.get::<_, String>(2)?,
-                exact(row.get(3)?, row.get(4)?).unwrap_or_default(),
+                row.get::<_, String>(3)?,
+                exact(row.get(4)?, row.get(5)?).unwrap_or_default(),
             ),
         ))
     })?;
@@ -214,7 +216,7 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
         let ledger = holding.quantity.parse::<Decimal>().unwrap_or_default();
         let snapshot = broker.remove(&(holding.account_id.clone(), holding.instrument_id.clone()));
         let (as_of, broker_quantity, difference, status) = match snapshot {
-            Some((date, quantity)) => {
+            Some((date, _account_name, quantity)) => {
                 let delta = ledger - quantity;
                 (
                     Some(date),
@@ -240,12 +242,7 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
             status,
         });
     }
-    for ((account_id, instrument_id), (date, quantity)) in broker {
-        let account_name = connection.query_row(
-            "SELECT display_name FROM accounts WHERE id=?1",
-            [&account_id],
-            |row| row.get(0),
-        )?;
+    for ((account_id, instrument_id), (date, account_name, quantity)) in broker {
         result.push(ReconciliationItem {
             account_id,
             account_name,

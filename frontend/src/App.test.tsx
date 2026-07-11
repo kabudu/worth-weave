@@ -64,8 +64,15 @@ test("renders truthful empty portfolio state", async () => {
   expect(await screen.findByRole("heading", { name: /your wealth, in focus/i })).toBeInTheDocument();
   expect(await screen.findByText("Awaiting data")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /set up local ai in settings/i })).toBeDisabled();
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "list_holdings")).toBe(false);
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "list_accounts")).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Portfolio" }));
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_holdings"));
+  fireEvent.click(screen.getByRole("button", { name: "Overview" }));
 
   fireEvent.click(screen.getByRole("button", { name: /import data/i }));
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_accounts"));
   expect(screen.getByRole("heading", { name: /add portfolio data/i })).toBeInTheDocument();
   expect(screen.getByText(/broker credentials are never required/i)).toBeInTheDocument();
 });
@@ -81,7 +88,7 @@ test("requires reporting currency during first-run onboarding", async () => {
   );
 
   expect(await screen.findByRole("heading", { name: /make every number/i })).toBeInTheDocument();
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith("portfolio_summary"));
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "portfolio_summary")).toBe(false);
   const currencySelect = screen.getByLabelText("Reporting currency");
   fireEvent.change(currencySelect, { target: { value: "EUR" } });
   expect(currencySelect).toHaveValue("EUR");

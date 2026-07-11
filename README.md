@@ -8,6 +8,15 @@
   Private, local-first portfolio analysis across supported investment brokers.
 </p>
 
+<p align="center">
+  <a href="https://github.com/kabudu/worth-weave/actions/workflows/macos-release.yml"><img alt="macOS release" src="https://github.com/kabudu/worth-weave/actions/workflows/macos-release.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+  <img alt="macOS 13 or later" src="https://img.shields.io/badge/macOS-13%2B-111111?logo=apple">
+  <img alt="Rust 1.97" src="https://img.shields.io/badge/Rust-1.97-000000?logo=rust">
+  <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri&logoColor=white">
+  <img alt="Local-first" src="https://img.shields.io/badge/data-local--first-2F7D5B">
+</p>
+
 Worthweave brings investments held across multiple brokers and account types into one coherent macOS application. It reconstructs holdings from broker history, keeps Invest and Stocks and Shares ISA records separate, and reports portfolio value, performance, income, and allocation in a configurable reporting currency.
 
 Planned reporting and analysis features are documented in the [product roadmap](ROADMAP.md).
@@ -112,3 +121,7 @@ See the [release process](docs/release.md) for required GitHub secrets and varia
 - [Security model](docs/security.md)
 - [Release process](docs/release.md)
 - [v1 completion contract](docs/roadmap.md)
+
+## License
+
+Worthweave is licensed under the [Apache License 2.0](LICENSE). It is permissive and includes an explicit patent grant from contributors. See the license for its preservation, attribution, and change-notice requirements.

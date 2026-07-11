@@ -5,7 +5,7 @@
 <h1 align="center">Worthweave</h1>
 
 <p align="center">
-  Private, local-first portfolio analysis for Trading 212 and Interactive Brokers.
+  Private, local-first portfolio analysis across supported investment brokers.
 </p>
 
 Worthweave brings investments held across multiple brokers and account types into one coherent macOS application. It reconstructs holdings from broker history, keeps Invest and Stocks and Shares ISA records separate, and reports portfolio value, performance, income, and allocation in a configurable reporting currency.
@@ -15,6 +15,7 @@ Financial results come from deterministic Rust code using exact decimal represen
 ## Highlights
 
 - Account-aware Trading 212 and Interactive Brokers CSV imports.
+- Region-aware Robinhood UK and US account tracking, with imports held behind validated export schemas.
 - Separate Invest and Stocks and Shares ISA histories.
 - Exact quantities, cost basis, average cost, value, and gain/loss calculations.
 - Allocation by broker, account, asset class, sector, geography, and source currency.
@@ -52,6 +53,7 @@ Worthweave is portfolio-analysis software, not financial advice. Local AI explan
 - [Tauri 2](https://tauri.app/) and Rust for the native application, broker adapters, calculations, and SQLite storage.
 - React, TypeScript, TanStack Query, and Zod for the interface and native-command boundary.
 - Tailwind CSS design tokens with purpose-built component styling.
+- Locally bundled Manrope Variable and Inter Variable WOFF2 fonts; no remote font requests.
 - Rapid-MLX or Ollama for optional local model inference.
 
 The repository pins its Rust toolchain and JavaScript dependencies for reproducible builds.

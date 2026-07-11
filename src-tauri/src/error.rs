@@ -20,6 +20,8 @@ pub enum LedgerlyError {
     ImportRowLimit,
     #[error("only CSV imports are accepted")]
     UnsupportedFile,
+    #[error("Robinhood imports require a supported US CSV or UK statement export format")]
+    UnsupportedBrokerImport,
     #[error("invalid account details: {0}")]
     InvalidAccount(String),
     #[error("invalid application settings: {0}")]

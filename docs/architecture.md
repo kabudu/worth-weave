@@ -7,12 +7,12 @@ Broker CSV -> Rust adapter -> validated canonical events -> bundled SQLite
                                                         |
 React UI <- typed Tauri IPC <- deterministic views <----+
                                 |
-                                +-> future local LLM explanations
+                                +-> optional local LLM explanations
 ```
 
 ## Invariants
 
-1. Every event belongs to an explicit broker account and account type.
+1. Every event belongs to an explicit broker account, jurisdiction, and legal account type.
 2. Content hashes and broker identifiers prevent duplicate and overlapping imports.
 3. Parsing and validation complete before a transaction mutates ledger state.
 4. Financial values use exact scaled integers: a signed coefficient plus a decimal scale.
@@ -24,14 +24,14 @@ React UI <- typed Tauri IPC <- deterministic views <----+
 
 ## Components
 
-- `src-tauri/src/imports.rs`: bounded, account-aware Trading 212 and IBKR adapters.
+- `src-tauri/src/imports.rs`: bounded, account-aware Trading 212 and IBKR adapters plus explicit rejection for unvalidated broker schemas.
 - `src-tauri/src/db.rs`: bundled SQLite schema and persistence boundary.
 - `src-tauri/src/lib.rs`: minimal typed commands exposed to the webview.
 - `frontend`: React/TypeScript interface using Tailwind 4 design tokens.
 
 ## First-run settings
 
-The application creates a singleton settings record during database initialization. Until a supported ISO reporting currency is selected, the interface remains in onboarding. The same backend-owned currency catalogue and validation path power the onboarding and Settings screens. A currency change invalidates reporting views while leaving broker-native currencies and exact values untouched.
+The application creates a singleton settings record during database initialization. Until a supported ISO reporting currency is selected, the interface remains in onboarding. Account setup records the broker, ISO jurisdiction (`GB` or `US`), and legal account type; Robinhood account types are validated against their region. The same backend-owned currency catalogue and validation path power the onboarding and Settings screens. A currency change invalidates reporting views while leaving broker-native currencies and exact values untouched.
 
 The second onboarding step inspects only coarse local hardware characteristics needed for model sizing. Apple Silicon devices receive a pinned Rapid-MLX recommendation derived from its published unified-memory tiers; other devices receive an Ollama fallback. The user must explicitly approve runtime/model setup, which may download several gigabytes, or can continue without AI. The selected runtime, model and loopback endpoint are stored locally. Portfolio calculations remain deterministic application code; models may only explain application-produced analytics.
 
@@ -45,7 +45,9 @@ Configured AI runtimes start on demand when a question is asked rather than at a
 
 Allocation is calculated from the same complete reporting-currency valuation by platform, account, asset class, sector, geography, and source currency. IBKR asset classes are imported where supplied; missing classifications remain visibly `Unclassified` until the user adds local metadata. Metadata edits affect grouping only and never alter broker events or financial values.
 
-Schema version 5 adds projection, activity, import, and latest-position indexes. Import de-duplication relies on SQLite uniqueness inside the transaction instead of loading every historical source identifier into memory. The frontend defers account and reporting queries until onboarding is complete and the relevant view is opened. Backup/export paths are streaming, so memory use no longer scales with the entire SQLite database size.
+Schema version 5 adds projection, activity, import, and latest-position indexes. Schema version 6 adds account jurisdiction, migrating existing accounts to `GB` for compatibility and assigning US Robinhood accounts a USD base currency. Import de-duplication relies on SQLite uniqueness inside the transaction instead of loading every historical source identifier into memory. The frontend defers account and reporting queries until onboarding is complete and the relevant view is opened. Backup/export paths are streaming, so memory use no longer scales with the entire SQLite database size.
+
+Manrope Variable and Inter Variable are bundled as local WOFF2 assets. Manrope provides the display and brand voice; Inter is the application and financial-data face. The webview does not contact Google Fonts or another font CDN.
 
 ## Valuation provenance
 

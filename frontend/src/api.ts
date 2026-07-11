@@ -12,8 +12,9 @@ export type PortfolioSummary = z.infer<typeof portfolioSummarySchema>;
 
 const accountSchema = z.object({
   id: z.string().uuid(),
-  broker: z.enum(["trading_212", "ibkr"]),
-  account_type: z.enum(["invest", "stocks_and_shares_isa"]),
+  broker: z.enum(["trading_212", "ibkr", "robinhood"]),
+  jurisdiction: z.enum(["GB", "US"]),
+  account_type: z.enum(["invest", "individual_brokerage", "stocks_and_shares_isa", "joint_jtwros", "traditional_ira", "roth_ira", "custodial_utma"]),
   display_name: z.string(),
   base_currency: z.string().regex(/^[A-Z]{3}$/),
 });
@@ -63,12 +64,12 @@ export type AiRecommendation = z.infer<typeof aiRecommendationSchema>;
 const exactString = z.string().regex(/^-?\d+(?:\.\d+)?$/);
 const activityEventSchema = z.object({
   id: z.string().uuid(), account_id: z.string().uuid(), account_name: z.string(),
-  broker: z.enum(["trading_212", "ibkr"]), event_type: z.string(), occurred_at: z.string(),
+  broker: z.enum(["trading_212", "ibkr", "robinhood"]), event_type: z.string(), occurred_at: z.string(),
   description: z.string(), amount: exactString.nullable(), currency: z.string().nullable(),
   quantity: exactString.nullable(), instrument_id: z.string().nullable(),
 });
 const holdingSchema = z.object({
-  account_id: z.string().uuid(), account_name: z.string(), broker: z.enum(["trading_212", "ibkr"]),
+  account_id: z.string().uuid(), account_name: z.string(), broker: z.enum(["trading_212", "ibkr", "robinhood"]),
   instrument_id: z.string(), symbol: z.string().nullable(), name: z.string().nullable(),
   asset_class: z.string().nullable(), sector: z.string().nullable(), geography: z.string().nullable(),
   quantity: exactString, cost_basis: exactString.nullable(),
@@ -146,16 +147,17 @@ export async function updateSettings(reportingCurrency: string): Promise<AppSett
   }));
 }
 
-export type InitialAccount = Pick<Account, "broker" | "account_type" | "display_name">;
+export type InitialAccount = Pick<Account, "broker" | "jurisdiction" | "account_type" | "display_name">;
 
 export async function completeInitialSetup(reportingCurrency: string, requestedAccounts: InitialAccount[]): Promise<AppSettings> {
   const existing = await getAccounts();
   for (const account of requestedAccounts) {
     const alreadyExists = existing.some((candidate) =>
-      candidate.broker === account.broker && candidate.account_type === account.account_type,
+      candidate.broker === account.broker && candidate.jurisdiction === account.jurisdiction && candidate.account_type === account.account_type,
     );
     if (!alreadyExists) await createAccount({
       broker: account.broker,
+      jurisdiction: account.jurisdiction,
       account_type: account.account_type,
       display_name: account.display_name,
     });
@@ -245,6 +247,7 @@ export async function exportPortfolioJson(path: string): Promise<void> {
 
 export async function createAccount(input: {
   broker: Broker;
+  jurisdiction: Account["jurisdiction"];
   account_type: AccountType;
   display_name: string;
 }): Promise<Account> {

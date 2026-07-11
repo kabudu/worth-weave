@@ -20,8 +20,8 @@ function mockNativeCommands(onboardingComplete: boolean, aiOnboardingComplete = 
     if (["list_accounts", "list_holdings", "list_activity", "income_summary", "list_portfolio_snapshots", "portfolio_reconciliation"].includes(command)) return [];
     if (command === "list_currencies") return currencies;
     if (command === "create_account") {
-      const input = (args as { input: { broker: string; account_type: string; display_name: string } }).input;
-      return { id: crypto.randomUUID(), base_currency: "GBP", ...input };
+      const input = (args as { input: { broker: string; jurisdiction: "GB" | "US"; account_type: string; display_name: string } }).input;
+      return { id: crypto.randomUUID(), base_currency: input.jurisdiction === "US" ? "USD" : "GBP", ...input };
     }
     if (command === "get_settings") return {
       reporting_currency: onboardingComplete ? "GBP" : null,
@@ -92,8 +92,12 @@ test("requires reporting currency during first-run onboarding", async () => {
   );
 
   expect(await screen.findByRole("heading", { name: /bring your portfolio/i })).toBeInTheDocument();
-  expect(screen.getByRole("checkbox", { name: /trading 212 isa/i })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: /trading 212 stocks and shares isa/i })).toBeChecked();
   expect(screen.getByRole("checkbox", { name: /trading 212 invest/i })).not.toBeChecked();
+  expect(screen.getByLabelText("Robinhood account region")).toHaveValue("GB");
+  expect(screen.getByRole("checkbox", { name: /robinhood gb individual brokerage/i })).not.toBeChecked();
+  fireEvent.change(screen.getByLabelText("Robinhood account region"), { target: { value: "US" } });
+  expect(screen.getByRole("checkbox", { name: /robinhood us roth ira/i })).not.toBeChecked();
   expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "portfolio_summary")).toBe(false);
   const currencySelect = screen.getByLabelText("Reporting currency");
   fireEvent.change(currencySelect, { target: { value: "EUR" } });

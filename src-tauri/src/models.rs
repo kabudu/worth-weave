@@ -12,6 +12,7 @@ pub struct PortfolioSummary {
 pub struct Account {
     pub id: String,
     pub broker: String,
+    pub jurisdiction: String,
     pub account_type: String,
     pub display_name: String,
     pub base_currency: String,
@@ -72,6 +73,7 @@ pub struct CurrencyOption {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateAccountInput {
     pub broker: String,
+    pub jurisdiction: String,
     pub account_type: String,
     pub display_name: String,
 }

@@ -9,8 +9,8 @@ function money(value: string | null, currency: string | null) {
   return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 4 }).format(Number(value));
 }
 
-function brokerName(broker: "trading_212" | "ibkr") {
-  return broker === "trading_212" ? "Trading 212" : "IBKR";
+function brokerName(broker: "trading_212" | "ibkr" | "robinhood") {
+  return broker === "trading_212" ? "Trading 212" : broker === "ibkr" ? "IBKR" : "Robinhood";
 }
 
 function EmptyState({ title, copy }: { title: string; copy: string }) {

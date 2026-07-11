@@ -24,6 +24,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: ({ signal }) => getAccounts(signal), enabled: open });
   const [selectedId, setSelectedId] = useState("");
   const [broker, setBroker] = useState<Broker>("trading_212");
+  const [jurisdiction, setJurisdiction] = useState<Account["jurisdiction"]>("GB");
   const [accountType, setAccountType] = useState<AccountType>("stocks_and_shares_isa");
   const [displayName, setDisplayName] = useState("Trading 212 ISA");
   const [filePath, setFilePath] = useState("");
@@ -65,13 +66,13 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
 
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    createMutation.mutate({ broker, account_type: accountType, display_name: displayName.trim() });
+    createMutation.mutate({ broker, jurisdiction, account_type: accountType, display_name: displayName.trim() });
   }
 
   function handleImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const account = accounts.data?.find((candidate) => candidate.id === effectiveSelectedId);
-    if (account && filePath) importMutation.mutate({ account, source: filePath });
+    if (account && account.broker !== "robinhood" && filePath) importMutation.mutate({ account, source: filePath });
   }
 
   async function chooseFile() {
@@ -88,6 +89,42 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
     importMutation.reset();
     createMutation.reset();
     onClose();
+  }
+  const selectedAccount = accounts.data?.find((candidate) => candidate.id === effectiveSelectedId);
+  const importSupported = selectedAccount?.broker !== "robinhood";
+  const accountTypeOptions: Array<{ value: AccountType; label: string }> = broker === "robinhood"
+    ? jurisdiction === "GB"
+      ? [{ value: "individual_brokerage", label: "Individual brokerage" }, { value: "stocks_and_shares_isa", label: "Stocks & Shares ISA" }]
+      : [{ value: "individual_brokerage", label: "Individual brokerage" }, { value: "joint_jtwros", label: "Joint investing (JTWROS)" }, { value: "traditional_ira", label: "Traditional IRA" }, { value: "roth_ira", label: "Roth IRA" }, { value: "custodial_utma", label: "Custodial (UTMA)" }]
+    : [{ value: "stocks_and_shares_isa", label: "Stocks & Shares ISA" }, { value: "invest", label: "Invest" }];
+  function defaultAccountName(nextBroker: Broker, nextJurisdiction: Account["jurisdiction"], nextType: AccountType) {
+    if (nextBroker === "trading_212") return `Trading 212 ${nextType === "stocks_and_shares_isa" ? "ISA" : "Invest"}`;
+    if (nextBroker === "ibkr") return `IBKR ${nextType === "stocks_and_shares_isa" ? "ISA" : "Invest"}`;
+    const names: Partial<Record<AccountType, string>> = {
+      individual_brokerage: nextJurisdiction === "US" ? "Robinhood Individual" : "Robinhood UK Brokerage",
+      stocks_and_shares_isa: "Robinhood UK ISA",
+      joint_jtwros: "Robinhood Joint",
+      traditional_ira: "Robinhood Traditional IRA",
+      roth_ira: "Robinhood Roth IRA",
+      custodial_utma: "Robinhood Custodial",
+    };
+    return names[nextType] ?? "Robinhood account";
+  }
+  function changeBroker(nextBroker: Broker) {
+    setBroker(nextBroker);
+    setJurisdiction("GB");
+    const nextType = nextBroker === "robinhood" ? "individual_brokerage" : "stocks_and_shares_isa";
+    setAccountType(nextType);
+    setDisplayName(defaultAccountName(nextBroker, "GB", nextType));
+  }
+  function changeJurisdiction(nextJurisdiction: Account["jurisdiction"]) {
+    setJurisdiction(nextJurisdiction);
+    setAccountType("individual_brokerage");
+    setDisplayName(defaultAccountName("robinhood", nextJurisdiction, "individual_brokerage"));
+  }
+  function changeAccountType(nextType: AccountType) {
+    setAccountType(nextType);
+    setDisplayName(defaultAccountName(broker, jurisdiction, nextType));
   }
 
   return (
@@ -112,8 +149,9 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
             <div className="form-number">1</div>
             <h3>Create an account</h3>
             <p>Separate accounts keep ISA and taxable activity from being combined.</p>
-            <label>Broker<select value={broker} onChange={(event) => setBroker(event.target.value as Broker)}><option value="trading_212">Trading 212</option><option value="ibkr">Interactive Brokers</option></select></label>
-            <label>Account type<select value={accountType} onChange={(event) => setAccountType(event.target.value as AccountType)}><option value="stocks_and_shares_isa">Stocks &amp; Shares ISA</option><option value="invest">Invest</option></select></label>
+            <label>Broker<select value={broker} onChange={(event) => changeBroker(event.target.value as Broker)}><option value="trading_212">Trading 212</option><option value="ibkr">Interactive Brokers</option><option value="robinhood">Robinhood</option></select></label>
+            {broker === "robinhood" && <label>Region<select value={jurisdiction} onChange={(event) => changeJurisdiction(event.target.value as Account["jurisdiction"])}><option value="GB">United Kingdom</option><option value="US">United States</option></select></label>}
+            <label>Account type<select value={accountType} onChange={(event) => changeAccountType(event.target.value as AccountType)}>{accountTypeOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
             <label>Account name<input value={displayName} maxLength={160} required onChange={(event) => setDisplayName(event.target.value)} /></label>
             <button type="submit" className="secondary-button" disabled={createMutation.isPending || !displayName.trim()}>{createMutation.isPending ? "Creating…" : "Create account"}</button>
             {createMutation.isError && <small className="form-error" role="alert">{createMutation.error.message}</small>}
@@ -124,8 +162,8 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
             <h3>Choose a CSV export</h3>
             <p>The file is processed locally and protected from duplicate imports.</p>
             <label>Destination account<select value={effectiveSelectedId} required onChange={(event) => setSelectedId(event.target.value)}><option value="" disabled>Select an account</option>{accounts.data?.map((account) => <option value={account.id} key={account.id}>{account.display_name}</option>)}</select></label>
-            <button className="file-drop" type="button" onClick={chooseFile}><span>{filePath ? filePath.split(/[\\/]/).at(-1) : "Choose CSV file"}</span><small>Maximum 50 MB · CSV only</small></button>
-            <button type="submit" className="primary-button" disabled={!effectiveSelectedId || !filePath || importMutation.isPending}>{importMutation.isPending ? "Verifying…" : "Verify and import"}</button>
+            <button className="file-drop" type="button" disabled={!importSupported} onClick={chooseFile}><span>{importSupported ? filePath ? filePath.split(/[\\/]/).at(-1) : "Choose CSV file" : "Robinhood import unavailable"}</span><small>{importSupported ? "Maximum 50 MB · CSV only" : "A representative Robinhood export is required to validate this importer"}</small></button>
+            <button type="submit" className="primary-button" disabled={!effectiveSelectedId || !filePath || !importSupported || importMutation.isPending}>{importMutation.isPending ? "Verifying…" : "Verify and import"}</button>
             {importMutation.isError && <small className="form-error" role="alert">{importMutation.error.message}</small>}
           </form>
         </div>

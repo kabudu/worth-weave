@@ -5,14 +5,14 @@ import process from "node:process";
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     let settings = { reporting_currency: null as string | null, onboarding_complete: false, ai_onboarding_complete: false, ai_runtime: null, ai_model: null, ai_endpoint: null };
-    const accounts: Array<{ id: string; broker?: string; account_type?: string; display_name?: string; base_currency: string }> = [];
+    const accounts: Array<{ id: string; broker?: string; jurisdiction?: string; account_type?: string; display_name?: string; base_currency: string }> = [];
     const emptyCommands = new Set(["list_holdings", "list_activity", "income_summary", "list_portfolio_snapshots", "portfolio_reconciliation"]);
-    const invoke = async (command: string, args?: { input?: { reporting_currency?: string; broker?: string; account_type?: string; display_name?: string } }) => {
+    const invoke = async (command: string, args?: { input?: { reporting_currency?: string; broker?: string; jurisdiction?: string; account_type?: string; display_name?: string } }) => {
       if (command === "get_settings") return settings;
       if (command === "list_accounts") return accounts;
       if (command === "list_currencies") return [{ code: "GBP", name: "British pound", symbol: "£" }, { code: "EUR", name: "Euro", symbol: "€" }];
       if (command === "update_settings") { settings = { ...settings, reporting_currency: args?.input?.reporting_currency ?? "GBP", onboarding_complete: true }; return settings; }
-      if (command === "create_account") { const account = { id: crypto.randomUUID(), broker: args?.input?.broker, account_type: args?.input?.account_type, display_name: args?.input?.display_name, base_currency: "GBP" }; accounts.push(account); return account; }
+      if (command === "create_account") { const account = { id: crypto.randomUUID(), broker: args?.input?.broker, jurisdiction: args?.input?.jurisdiction, account_type: args?.input?.account_type, display_name: args?.input?.display_name, base_currency: args?.input?.jurisdiction === "US" ? "USD" : "GBP" }; accounts.push(account); return account; }
       if (command === "ai_recommendation") return { runtime: "rapid-mlx", runtime_name: "Rapid-MLX", model: "gpt-oss-20b-mxfp4-q8", endpoint: "http://127.0.0.1:8000/v1", rationale: "Apple Silicon with 24 GB unified memory.", installed: false, supported: true };
       if (command === "skip_ai_setup") { settings = { ...settings, ai_onboarding_complete: true }; return settings; }
       if (emptyCommands.has(command)) return [];
@@ -30,6 +30,13 @@ test("completes accessible first-run onboarding", async ({ page }) => {
   page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /bring your portfolio/i })).toBeVisible();
+  await expect(page.getByLabel("Robinhood account region")).toHaveValue("GB");
+  expect(await page.locator("body").evaluate((element) => getComputedStyle(element).fontFamily)).toContain("Inter Variable");
+  expect(await page.getByRole("heading", { name: /bring your portfolio/i }).evaluate((element) => getComputedStyle(element).fontFamily)).toContain("Manrope Variable");
+  expect(await page.evaluate(() => document.fonts.check("16px 'Inter Variable'") && document.fonts.check("16px 'Manrope Variable'"))).toBe(true);
+  await page.getByLabel("Robinhood account region").selectOption("US");
+  await expect(page.getByRole("checkbox", { name: /robinhood us roth ira/i })).toBeVisible();
+  await page.getByLabel("Robinhood account region").selectOption("GB");
   if (process.env.CAPTURE_SCREENSHOTS) { await page.waitForTimeout(300); await page.screenshot({ path: "../.dev/screenshots/onboarding.png", fullPage: true }); }
   const firstScan = await new AxeBuilder({ page }).analyze();
   expect(firstScan.violations).toEqual([]);

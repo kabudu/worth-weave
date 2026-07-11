@@ -538,10 +538,11 @@ pub fn import_csv(
     if duplicate.is_some() {
         return Err(LedgerlyError::DuplicateImport);
     }
-    let parsed = if broker == "trading_212" {
-        parse_trading212(&content)?
-    } else {
-        parse_ibkr(&content)?
+    let parsed = match broker.as_str() {
+        "trading_212" => parse_trading212(&content)?,
+        "ibkr" => parse_ibkr(&content)?,
+        "robinhood" => return Err(LedgerlyError::UnsupportedBrokerImport),
+        _ => return Err(LedgerlyError::UnsupportedBrokerImport),
     };
     if parsed.events.len().saturating_add(parsed.positions.len()) > MAX_IMPORT_ROWS {
         return Err(LedgerlyError::ImportRowLimit);
@@ -693,6 +694,7 @@ mod tests {
             &connection,
             &crate::models::CreateAccountInput {
                 broker: "ibkr".into(),
+                jurisdiction: "GB".into(),
                 account_type: "invest".into(),
                 display_name: "IBKR Invest".into(),
             },
@@ -710,6 +712,32 @@ mod tests {
             crate::projections::reconciliation(&connection).expect("reconciliation");
         assert_eq!(reconciliation.len(), 1);
         assert_eq!(reconciliation[0].status, "matched");
+    }
+
+    #[test]
+    fn robinhood_import_rejects_unvalidated_export_schemas() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        let account = db::create_account(
+            &connection,
+            &crate::models::CreateAccountInput {
+                broker: "robinhood".into(),
+                jurisdiction: "US".into(),
+                account_type: "individual_brokerage".into(),
+                display_name: "Robinhood Individual".into(),
+            },
+        )
+        .expect("account");
+        let path = directory.path().join("robinhood.csv");
+        std::fs::write(
+            &path,
+            "Activity Date,Trans Code,Instrument,Quantity,Amount\n2026-01-01,Buy,HOOD,1,-10.00\n",
+        )
+        .expect("export");
+        assert!(matches!(
+            import_csv(&mut connection, &account.id, &path, "individual_brokerage"),
+            Err(LedgerlyError::UnsupportedBrokerImport)
+        ));
     }
 
     #[test]

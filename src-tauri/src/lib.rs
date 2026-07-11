@@ -348,6 +348,7 @@ mod tests {
             &connection,
             &CreateAccountInput {
                 broker: "trading_212".into(),
+                jurisdiction: "GB".into(),
                 account_type: "stocks_and_shares_isa".into(),
                 display_name: "Trading 212 ISA".into(),
             },
@@ -355,7 +356,67 @@ mod tests {
         .expect("create account");
 
         assert_eq!(account.base_currency, "GBP");
+        assert_eq!(account.jurisdiction, "GB");
         assert_eq!(db::accounts(&connection).expect("accounts").len(), 1);
+    }
+
+    #[test]
+    fn robinhood_accounts_are_region_aware() {
+        let directory = tempdir().expect("temp directory");
+        let connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        let roth = db::create_account(
+            &connection,
+            &CreateAccountInput {
+                broker: "robinhood".into(),
+                jurisdiction: "US".into(),
+                account_type: "roth_ira".into(),
+                display_name: "Robinhood Roth IRA".into(),
+            },
+        )
+        .expect("US Roth IRA");
+        assert_eq!(roth.base_currency, "USD");
+        assert_eq!(roth.jurisdiction, "US");
+        assert!(
+            db::create_account(
+                &connection,
+                &CreateAccountInput {
+                    broker: "robinhood".into(),
+                    jurisdiction: "GB".into(),
+                    account_type: "roth_ira".into(),
+                    display_name: "Invalid UK Roth".into(),
+                },
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn legacy_accounts_migrate_to_gb_jurisdiction() {
+        let directory = tempdir().expect("temp directory");
+        let path = directory.path().join("worthweave.db");
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database");
+            connection
+                .execute_batch(
+                    "CREATE TABLE accounts (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    broker TEXT NOT NULL,
+                    account_type TEXT NOT NULL,
+                    external_id TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    base_currency TEXT NOT NULL DEFAULT 'GBP',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (broker, external_id)
+                 );
+                 INSERT INTO accounts (id, broker, account_type, external_id, display_name)
+                 VALUES ('legacy', 'ibkr', 'invest', 'ibkr:invest:legacy', 'Legacy IBKR');",
+                )
+                .expect("legacy schema");
+        }
+        let connection = db::open(&path).expect("migrated database");
+        let accounts = db::accounts(&connection).expect("accounts");
+        assert_eq!(accounts[0].jurisdiction, "GB");
+        assert_eq!(db::schema_version(&connection).expect("schema version"), 6);
     }
 
     #[test]
@@ -366,6 +427,7 @@ mod tests {
             &connection,
             &CreateAccountInput {
                 broker: "trading_212".into(),
+                jurisdiction: "GB".into(),
                 account_type: "stocks_and_shares_isa".into(),
                 display_name: "ISA".into(),
             },
@@ -480,6 +542,7 @@ mod tests {
             &connection,
             &CreateAccountInput {
                 broker: "trading_212".into(),
+                jurisdiction: "GB".into(),
                 account_type: "invest".into(),
                 display_name: "Partial".into(),
             },

@@ -126,6 +126,7 @@ pub fn open(path: &Path) -> Result<Connection> {
          CREATE TABLE IF NOT EXISTS accounts (
            id TEXT PRIMARY KEY NOT NULL,
            broker TEXT NOT NULL,
+           jurisdiction TEXT NOT NULL DEFAULT 'GB',
            account_type TEXT NOT NULL,
            external_id TEXT NOT NULL,
            display_name TEXT NOT NULL,
@@ -232,6 +233,19 @@ pub fn open(path: &Path) -> Result<Connection> {
             ))?;
         }
     }
+    let has_account_jurisdiction = {
+        let mut statement = connection.prepare("PRAGMA table_info(accounts)")?;
+        statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "jurisdiction")
+    };
+    if !has_account_jurisdiction {
+        connection.execute_batch(
+            "ALTER TABLE accounts ADD COLUMN jurisdiction TEXT NOT NULL DEFAULT 'GB';",
+        )?;
+    }
     for (column, definition) in [
         ("asset_class", "TEXT"),
         ("sector", "TEXT"),
@@ -262,13 +276,14 @@ pub fn open(path: &Path) -> Result<Connection> {
            (2, 'adaptive_ai_settings'),
            (3, 'broker_reconciliation_and_instruments'),
            (4, 'instrument_classification'),
-           (5, 'reporting_indexes');
-         PRAGMA user_version = 5;",
+           (5, 'reporting_indexes'),
+           (6, 'region_aware_broker_accounts');
+         PRAGMA user_version = 6;",
     )?;
     Ok(connection)
 }
 
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 #[cfg(test)]
 pub fn schema_version(connection: &Connection) -> Result<i64> {
@@ -333,15 +348,16 @@ pub fn summary(connection: &Connection) -> Result<PortfolioSummary> {
 
 pub fn accounts(connection: &Connection) -> Result<Vec<Account>> {
     let mut statement = connection.prepare(
-        "SELECT id, broker, account_type, display_name, base_currency FROM accounts ORDER BY created_at, id",
+        "SELECT id, broker, jurisdiction, account_type, display_name, base_currency FROM accounts ORDER BY created_at, id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok(Account {
             id: row.get(0)?,
             broker: row.get(1)?,
-            account_type: row.get(2)?,
-            display_name: row.get(3)?,
-            base_currency: row.get(4)?,
+            jurisdiction: row.get(2)?,
+            account_type: row.get(3)?,
+            display_name: row.get(4)?,
+            base_currency: row.get(5)?,
         })
     })?;
     rows.collect::<std::result::Result<Vec<_>, _>>()
@@ -349,15 +365,31 @@ pub fn accounts(connection: &Connection) -> Result<Vec<Account>> {
 }
 
 pub fn create_account(connection: &Connection, input: &CreateAccountInput) -> Result<Account> {
-    if !matches!(input.broker.as_str(), "trading_212" | "ibkr") {
+    if !matches!(input.broker.as_str(), "trading_212" | "ibkr" | "robinhood") {
         return Err(crate::error::LedgerlyError::InvalidAccount(
             "unsupported broker".into(),
         ));
     }
-    if !matches!(
-        input.account_type.as_str(),
-        "invest" | "stocks_and_shares_isa"
-    ) {
+    let valid_type = match (input.broker.as_str(), input.jurisdiction.as_str()) {
+        ("trading_212" | "ibkr", "GB") => matches!(
+            input.account_type.as_str(),
+            "invest" | "stocks_and_shares_isa"
+        ),
+        ("robinhood", "GB") => matches!(
+            input.account_type.as_str(),
+            "individual_brokerage" | "stocks_and_shares_isa"
+        ),
+        ("robinhood", "US") => matches!(
+            input.account_type.as_str(),
+            "individual_brokerage"
+                | "joint_jtwros"
+                | "traditional_ira"
+                | "roth_ira"
+                | "custodial_utma"
+        ),
+        _ => false,
+    };
+    if !valid_type {
         return Err(crate::error::LedgerlyError::InvalidAccount(
             "unsupported account type".into(),
         ));
@@ -368,22 +400,34 @@ pub fn create_account(connection: &Connection, input: &CreateAccountInput) -> Re
         ));
     }
     let id = Uuid::new_v4().to_string();
-    let external_id = format!("{}:{}:{}", input.broker, input.account_type, Uuid::new_v4());
+    let external_id = format!(
+        "{}:{}:{}:{}",
+        input.broker,
+        input.jurisdiction,
+        input.account_type,
+        Uuid::new_v4()
+    );
+    let base_currency = if input.jurisdiction == "US" {
+        "USD"
+    } else {
+        "GBP"
+    };
     connection.execute(
-        "INSERT INTO accounts (id, broker, account_type, external_id, display_name) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![id, input.broker, input.account_type, external_id, input.display_name.trim()],
+        "INSERT INTO accounts (id, broker, jurisdiction, account_type, external_id, display_name, base_currency) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, input.broker, input.jurisdiction, input.account_type, external_id, input.display_name.trim(), base_currency],
     )?;
     connection
         .query_row(
-            "SELECT id, broker, account_type, display_name, base_currency FROM accounts WHERE id = ?1",
+            "SELECT id, broker, jurisdiction, account_type, display_name, base_currency FROM accounts WHERE id = ?1",
             [&id],
             |row| {
                 Ok(Account {
                     id: row.get(0)?,
                     broker: row.get(1)?,
-                    account_type: row.get(2)?,
-                    display_name: row.get(3)?,
-                    base_currency: row.get(4)?,
+                    jurisdiction: row.get(2)?,
+                    account_type: row.get(3)?,
+                    display_name: row.get(4)?,
+                    base_currency: row.get(5)?,
                 })
             },
         )

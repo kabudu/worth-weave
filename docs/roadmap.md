@@ -14,7 +14,7 @@ Worthweave v1 is complete when a macOS user can onboard, import supported broker
 - [ ] Reporting-currency value, gain/loss, allocation, snapshots, and historical performance.
 - [x] Human-readable portfolio export plus encrypted, versioned backup and restore.
 - [x] Optional local-runtime explanations grounded only in deterministic analytics.
-- [ ] Versioned migrations, accessibility and end-to-end coverage, signing/notarisation readiness.
+- [x] Versioned migrations, accessibility and end-to-end coverage, signing/notarisation readiness.
 
 ## Non-negotiable reporting rules
 

@@ -26,3 +26,10 @@
 - Signed/notarized macOS application packaging
 
 These are release requirements before distribution beyond a trusted local user.
+
+## Verification gates
+
+- Rust commands compile under strict `clippy -D warnings`; unit tests cover import boundaries, exact arithmetic, reconciliation, schema versioning, backup restore, and loopback-only AI.
+- Production JavaScript dependencies and the Rust lockfile are audited before release. The current audit reports no known vulnerabilities. RustSec lifecycle warnings originate from Tauri's Linux GTK dependency graph and `age`'s macro dependency; these are not known vulnerabilities in the macOS artifact and remain tracked for upstream upgrades.
+- The browser E2E suite runs the production frontend, completes both onboarding steps, and requires zero axe WCAG violations on the first-run screen.
+- Tauri capabilities expose only core defaults and file open/save dialogs. The webview CSP blocks remote scripts and network connections; local AI networking occurs in Rust and accepts loopback endpoints only.

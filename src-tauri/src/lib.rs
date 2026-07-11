@@ -278,6 +278,16 @@ mod tests {
         let connection = db::open(&directory.path().join("worthweave.db")).expect("database");
 
         let initial = db::summary(&connection).expect("summary");
+        assert_eq!(
+            db::schema_version(&connection).expect("schema version"),
+            db::SCHEMA_VERSION
+        );
+        let migration_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .expect("migration history");
+        assert_eq!(migration_count, db::SCHEMA_VERSION);
         assert_eq!(initial.account_count, 0);
         assert_eq!(initial.reporting_currency, "GBP");
         assert_eq!(initial.data_status, "awaiting_imports");

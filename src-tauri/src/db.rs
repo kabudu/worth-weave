@@ -219,7 +219,29 @@ pub fn open(path: &Path) -> Result<Connection> {
             ))?;
         }
     }
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+           version INTEGER PRIMARY KEY NOT NULL,
+           name TEXT NOT NULL,
+           applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         INSERT OR IGNORE INTO schema_migrations (version, name) VALUES
+           (1, 'initial_local_ledger'),
+           (2, 'adaptive_ai_settings'),
+           (3, 'broker_reconciliation_and_instruments');
+         PRAGMA user_version = 3;",
+    )?;
     Ok(connection)
+}
+
+#[cfg(test)]
+pub const SCHEMA_VERSION: i64 = 3;
+
+#[cfg(test)]
+pub fn schema_version(connection: &Connection) -> Result<i64> {
+    connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(Into::into)
 }
 
 pub fn summary(connection: &Connection) -> Result<PortfolioSummary> {

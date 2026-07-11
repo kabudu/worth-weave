@@ -20,6 +20,7 @@ React UI <- typed Tauri IPC <- deterministic views <----+
 6. Quantities, prices, FX rates, and cost basis retain their source precision. Binary floating point is never ledger truth.
 7. Partial history is represented with coverage intervals and never reported as complete.
 8. LLM output cannot create or alter holdings, returns, cost basis, or source records.
+9. Reporting currency is a user preference stored independently of source amounts; changing it never mutates imported ledger events.
 
 ## Components
 
@@ -27,5 +28,9 @@ React UI <- typed Tauri IPC <- deterministic views <----+
 - `src-tauri/src/db.rs`: bundled SQLite schema and persistence boundary.
 - `src-tauri/src/lib.rs`: minimal typed commands exposed to the webview.
 - `frontend`: React/TypeScript interface using Tailwind 4 design tokens.
+
+## First-run settings
+
+The application creates a singleton settings record during database initialization. Until a supported ISO reporting currency is selected, the interface remains in onboarding. The same backend-owned currency catalogue and validation path power the onboarding and Settings screens. A currency change invalidates reporting views while leaving broker-native currencies and exact values untouched.
 
 The frontend currently uses TypeScript 6.0 because the stable `typescript-eslint` parser does not yet declare TypeScript 7 support. This should be revisited when its supported range advances.

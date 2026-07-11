@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PortfolioSummary {
-    pub base_currency: &'static str,
+    pub reporting_currency: String,
     pub account_count: i64,
     pub import_count: i64,
     pub data_status: &'static str,
@@ -14,7 +14,25 @@ pub struct Account {
     pub broker: String,
     pub account_type: String,
     pub display_name: String,
-    pub base_currency: &'static str,
+    pub base_currency: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AppSettings {
+    pub reporting_currency: Option<String>,
+    pub onboarding_complete: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateSettingsInput {
+    pub reporting_currency: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CurrencyOption {
+    pub code: &'static str,
+    pub name: &'static str,
+    pub symbol: &'static str,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
-import { getPortfolioSummary } from "./api";
+import { getCurrencies, getPortfolioSummary, getSettings } from "./api";
+import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { ImportDialog } from "./ImportDialog";
 
 const navItems = [
@@ -37,12 +38,33 @@ function StatusOrb({ imports }: { imports: number }) {
 
 export function App() {
   const [importOpen, setImportOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: ({ signal }) => getSettings(signal),
+  });
+  const currencies = useQuery({
+    queryKey: ["currencies"],
+    queryFn: ({ signal }) => getCurrencies(signal),
+    staleTime: Infinity,
+  });
   const summary = useQuery({
     queryKey: ["portfolio-summary"],
     queryFn: ({ signal }) => getPortfolioSummary(signal),
   });
   const accountCount = summary.data?.account_count ?? 0;
   const importCount = summary.data?.import_count ?? 0;
+  const reportingCurrency = settings.data?.reporting_currency ?? "GBP";
+
+  if (settings.isPending || currencies.isPending) {
+    return <div className="startup-screen"><BrandMark /><span>Preparing your private portfolio…</span></div>;
+  }
+  if (settings.isError || currencies.isError) {
+    return <div className="startup-screen error" role="alert"><strong>Worthweave couldn’t open its settings.</strong><span>{String(settings.error ?? currencies.error)}</span></div>;
+  }
+  if (!settings.data.onboarding_complete) {
+    return <Onboarding currencies={currencies.data} />;
+  }
 
   return (
     <div className="app-shell">
@@ -58,6 +80,7 @@ export function App() {
               {label}
             </a>
           ))}
+          <button type="button" onClick={() => setSettingsOpen(true)}><span aria-hidden="true">⚙</span>Settings</button>
         </nav>
         <div className="privacy-card">
           <span className="privacy-pulse" />
@@ -66,9 +89,9 @@ export function App() {
             <span>Your data stays on this Mac</span>
           </div>
         </div>
-        <button className="profile-button" type="button" aria-label="Open local profile settings">
+        <button className="profile-button" type="button" aria-label="Open local profile settings" onClick={() => setSettingsOpen(true)}>
           <span className="avatar">KL</span>
-          <span><strong>Local portfolio</strong><small>GBP · macOS</small></span>
+          <span><strong>Local portfolio</strong><small>{reportingCurrency} · macOS</small></span>
           <span aria-hidden="true">•••</span>
         </button>
       </aside>
@@ -98,7 +121,7 @@ export function App() {
         {summary.isError && (
           <div className="service-alert" role="alert">
             <span>!</span>
-            <div><strong>Start the local service</strong><p>{summary.error.message}</p></div>
+            <div><strong>Portfolio data is unavailable</strong><p>{summary.error.message}</p></div>
           </div>
         )}
 
@@ -148,6 +171,7 @@ export function App() {
 
         <footer><span>Worthweave · Local mode</span><span>Deterministic ledger <i /> Private AI ready</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
+        <SettingsDialog currencies={currencies.data} currentCurrency={reportingCurrency} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </main>
     </div>
   );

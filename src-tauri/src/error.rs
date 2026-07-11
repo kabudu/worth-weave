@@ -20,6 +20,8 @@ pub enum LedgerlyError {
     UnsupportedFile,
     #[error("invalid account details: {0}")]
     InvalidAccount(String),
+    #[error("invalid application settings: {0}")]
+    InvalidSettings(String),
     #[error("application data directory is unavailable")]
     DataDirectoryUnavailable,
     #[error("application state is unavailable")]

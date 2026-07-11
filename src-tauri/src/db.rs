@@ -5,7 +5,97 @@ use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
 use crate::error::Result;
-use crate::models::{Account, CreateAccountInput, PortfolioSummary};
+use crate::models::{
+    Account, AppSettings, CreateAccountInput, CurrencyOption, PortfolioSummary, UpdateSettingsInput,
+};
+
+pub const CURRENCIES: &[CurrencyOption] = &[
+    CurrencyOption {
+        code: "GBP",
+        name: "British pound",
+        symbol: "£",
+    },
+    CurrencyOption {
+        code: "USD",
+        name: "US dollar",
+        symbol: "$",
+    },
+    CurrencyOption {
+        code: "EUR",
+        name: "Euro",
+        symbol: "€",
+    },
+    CurrencyOption {
+        code: "CHF",
+        name: "Swiss franc",
+        symbol: "CHF",
+    },
+    CurrencyOption {
+        code: "JPY",
+        name: "Japanese yen",
+        symbol: "¥",
+    },
+    CurrencyOption {
+        code: "CAD",
+        name: "Canadian dollar",
+        symbol: "C$",
+    },
+    CurrencyOption {
+        code: "AUD",
+        name: "Australian dollar",
+        symbol: "A$",
+    },
+    CurrencyOption {
+        code: "NZD",
+        name: "New Zealand dollar",
+        symbol: "NZ$",
+    },
+    CurrencyOption {
+        code: "HKD",
+        name: "Hong Kong dollar",
+        symbol: "HK$",
+    },
+    CurrencyOption {
+        code: "SGD",
+        name: "Singapore dollar",
+        symbol: "S$",
+    },
+    CurrencyOption {
+        code: "SEK",
+        name: "Swedish krona",
+        symbol: "kr",
+    },
+    CurrencyOption {
+        code: "NOK",
+        name: "Norwegian krone",
+        symbol: "kr",
+    },
+    CurrencyOption {
+        code: "DKK",
+        name: "Danish krone",
+        symbol: "kr",
+    },
+    CurrencyOption {
+        code: "PLN",
+        name: "Polish złoty",
+        symbol: "zł",
+    },
+    CurrencyOption {
+        code: "CZK",
+        name: "Czech koruna",
+        symbol: "Kč",
+    },
+    CurrencyOption {
+        code: "INR",
+        name: "Indian rupee",
+        symbol: "₹",
+    },
+    CurrencyOption {
+        code: "ZAR",
+        name: "South African rand",
+        symbol: "R",
+    },
+];
 
 pub struct AppState {
     pub connection: Mutex<Connection>,
@@ -17,6 +107,13 @@ pub fn open(path: &Path) -> Result<Connection> {
         "PRAGMA foreign_keys = ON;
          PRAGMA journal_mode = WAL;
          PRAGMA busy_timeout = 5000;
+         CREATE TABLE IF NOT EXISTS app_settings (
+           id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+           reporting_currency TEXT,
+           onboarding_complete INTEGER NOT NULL DEFAULT 0 CHECK (onboarding_complete IN (0, 1)),
+           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         INSERT OR IGNORE INTO app_settings (id) VALUES (1);
          CREATE TABLE IF NOT EXISTS accounts (
            id TEXT PRIMARY KEY NOT NULL,
            broker TEXT NOT NULL,
@@ -63,7 +160,9 @@ pub fn summary(connection: &Connection) -> Result<PortfolioSummary> {
     let import_count =
         connection.query_row("SELECT COUNT(*) FROM import_batches", [], |row| row.get(0))?;
     Ok(PortfolioSummary {
-        base_currency: "GBP",
+        reporting_currency: settings(connection)?
+            .reporting_currency
+            .unwrap_or_else(|| "GBP".into()),
         account_count,
         import_count,
         data_status: if import_count == 0 {
@@ -76,7 +175,7 @@ pub fn summary(connection: &Connection) -> Result<PortfolioSummary> {
 
 pub fn accounts(connection: &Connection) -> Result<Vec<Account>> {
     let mut statement = connection.prepare(
-        "SELECT id, broker, account_type, display_name FROM accounts ORDER BY created_at, id",
+        "SELECT id, broker, account_type, display_name, base_currency FROM accounts ORDER BY created_at, id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok(Account {
@@ -84,7 +183,7 @@ pub fn accounts(connection: &Connection) -> Result<Vec<Account>> {
             broker: row.get(1)?,
             account_type: row.get(2)?,
             display_name: row.get(3)?,
-            base_currency: "GBP",
+            base_currency: row.get(4)?,
         })
     })?;
     rows.collect::<std::result::Result<Vec<_>, _>>()
@@ -118,7 +217,7 @@ pub fn create_account(connection: &Connection, input: &CreateAccountInput) -> Re
     )?;
     connection
         .query_row(
-            "SELECT id, broker, account_type, display_name FROM accounts WHERE id = ?1",
+            "SELECT id, broker, account_type, display_name, base_currency FROM accounts WHERE id = ?1",
             [&id],
             |row| {
                 Ok(Account {
@@ -126,11 +225,50 @@ pub fn create_account(connection: &Connection, input: &CreateAccountInput) -> Re
                     broker: row.get(1)?,
                     account_type: row.get(2)?,
                     display_name: row.get(3)?,
-                    base_currency: "GBP",
+                    base_currency: row.get(4)?,
                 })
             },
         )
         .map_err(Into::into)
+}
+
+pub fn currencies() -> &'static [CurrencyOption] {
+    CURRENCIES
+}
+
+pub fn settings(connection: &Connection) -> Result<AppSettings> {
+    connection
+        .query_row(
+            "SELECT reporting_currency, onboarding_complete FROM app_settings WHERE id = 1",
+            [],
+            |row| {
+                Ok(AppSettings {
+                    reporting_currency: row.get(0)?,
+                    onboarding_complete: row.get::<_, i64>(1)? == 1,
+                })
+            },
+        )
+        .map_err(Into::into)
+}
+
+pub fn update_settings(
+    connection: &Connection,
+    input: &UpdateSettingsInput,
+) -> Result<AppSettings> {
+    let currency = input.reporting_currency.trim().to_uppercase();
+    if !CURRENCIES
+        .iter()
+        .any(|candidate| candidate.code == currency)
+    {
+        return Err(crate::error::LedgerlyError::InvalidSettings(
+            "unsupported reporting currency".into(),
+        ));
+    }
+    connection.execute(
+        "UPDATE app_settings SET reporting_currency = ?1, onboarding_complete = 1, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+        [&currency],
+    )?;
+    settings(connection)
 }
 
 pub fn account_identity(

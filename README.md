@@ -2,6 +2,8 @@
 
 Worthweave is a local-first macOS portfolio application that weaves Trading 212 and Interactive Brokers accounts into one coherent view. Financial calculations are deterministic; local language models may explain results but never establish ledger truth.
 
+On first run, onboarding asks for a reporting currency. It is stored locally and can be changed later in Settings without modifying source transactions.
+
 ## Technology
 
 - Tauri 2 and Rust 1.97 provide the native application, broker adapters, and SQLite ledger.

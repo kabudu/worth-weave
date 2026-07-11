@@ -5,7 +5,10 @@ mod models;
 
 use db::AppState;
 use error::{LedgerlyError, Result};
-use models::{Account, CreateAccountInput, ImportResult, PortfolioSummary};
+use models::{
+    Account, AppSettings, CreateAccountInput, CurrencyOption, ImportResult, PortfolioSummary,
+    UpdateSettingsInput,
+};
 use tauri::{Manager, State};
 
 fn with_connection<T>(
@@ -32,6 +35,21 @@ fn list_accounts(state: State<'_, AppState>) -> Result<Vec<Account>> {
 #[tauri::command]
 fn create_account(input: CreateAccountInput, state: State<'_, AppState>) -> Result<Account> {
     with_connection(&state, |connection| db::create_account(connection, &input))
+}
+
+#[tauri::command]
+fn get_settings(state: State<'_, AppState>) -> Result<AppSettings> {
+    with_connection(&state, |connection| db::settings(connection))
+}
+
+#[tauri::command]
+fn list_currencies() -> &'static [CurrencyOption] {
+    db::currencies()
+}
+
+#[tauri::command]
+fn update_settings(input: UpdateSettingsInput, state: State<'_, AppState>) -> Result<AppSettings> {
+    with_connection(&state, |connection| db::update_settings(connection, &input))
 }
 
 #[tauri::command]
@@ -71,6 +89,9 @@ pub fn run() {
             portfolio_summary,
             list_accounts,
             create_account,
+            get_settings,
+            list_currencies,
+            update_settings,
             import_broker_file
         ])
         .run(tauri::generate_context!())
@@ -90,7 +111,32 @@ mod tests {
 
         let initial = db::summary(&connection).expect("summary");
         assert_eq!(initial.account_count, 0);
+        assert_eq!(initial.reporting_currency, "GBP");
         assert_eq!(initial.data_status, "awaiting_imports");
+        assert!(
+            !db::settings(&connection)
+                .expect("settings")
+                .onboarding_complete
+        );
+
+        let updated = db::update_settings(
+            &connection,
+            &UpdateSettingsInput {
+                reporting_currency: "eur".into(),
+            },
+        )
+        .expect("update settings");
+        assert_eq!(updated.reporting_currency.as_deref(), Some("EUR"));
+        assert!(updated.onboarding_complete);
+        assert!(
+            db::update_settings(
+                &connection,
+                &UpdateSettingsInput {
+                    reporting_currency: "BTC".into(),
+                },
+            )
+            .is_err()
+        );
 
         let account = db::create_account(
             &connection,

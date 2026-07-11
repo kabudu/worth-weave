@@ -18,7 +18,7 @@
   <img alt="Local-first" src="https://img.shields.io/badge/data-local--first-2F7D5B">
 </p>
 
-Worthweave brings investments held across multiple brokers and account types into one coherent macOS application. It reconstructs holdings from broker history, keeps Invest and Stocks and Shares ISA records separate, and reports portfolio value, performance, income, and allocation in a configurable reporting currency.
+Worthweave brings investments held across Trading 212, Interactive Brokers, and Robinhood into one coherent macOS application. It reconstructs holdings from broker history, keeps every provider and account type separate, and reports portfolio value, performance, income, and allocation in a configurable reporting currency.
 
 Planned reporting and analysis features are documented in the [product roadmap](ROADMAP.md).
 
@@ -26,9 +26,10 @@ Financial results come from deterministic Rust code using exact decimal represen
 
 ## Highlights
 
-- Account-aware Trading 212 and Interactive Brokers CSV imports.
-- Region-aware Robinhood UK and US account tracking, with imports held behind validated export schemas.
-- Separate Invest and Stocks and Shares ISA histories.
+- A consolidated view across Trading 212, Interactive Brokers, and Robinhood accounts.
+- Account-aware CSV imports for Trading 212 and Interactive Brokers.
+- Region-aware Robinhood UK and US account tracking, with imports enabled as export schemas are validated.
+- Separate histories for each provider, account, and tax wrapper—including general investment accounts, Stocks and Shares ISAs, and supported US brokerage and retirement accounts.
 - Exact quantities, cost basis, average cost, value, and gain/loss calculations.
 - Allocation by broker, account, asset class, sector, geography, and source currency.
 - Transaction, dividend, interest, and valuation-snapshot history.
@@ -44,7 +45,7 @@ Financial results come from deterministic Rust code using exact decimal represen
 Onboarding keeps setup short and reversible:
 
 1. Choose the reporting currency used for consolidated totals and performance.
-2. Select the broker accounts to track so taxable and ISA histories remain separate.
+2. Select providers and account types to track so every account and tax wrapper remains separate.
 3. Accept or skip the local AI recommendation generated for the Mac's hardware.
 4. Import broker CSV exports; Worthweave checks file hashes and transaction identifiers to prevent duplicates.
 

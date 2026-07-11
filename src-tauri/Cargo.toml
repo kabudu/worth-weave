@@ -18,6 +18,7 @@ age = "0.11.3"
 chrono = { version = "0.4.45", features = ["serde"] }
 csv = "1.4.0"
 rusqlite = { version = "0.40.1", features = ["backup", "bundled", "uuid"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json"] }
 rust_decimal = { version = "1.42.1", features = ["serde-with-str"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"

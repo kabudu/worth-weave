@@ -5423,6 +5423,7 @@ dependencies = [
  "age",
  "chrono",
  "csv",
+ "reqwest",
  "rusqlite",
  "rust_decimal",
  "serde",

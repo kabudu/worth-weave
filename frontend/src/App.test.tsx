@@ -63,7 +63,7 @@ test("renders truthful empty portfolio state", async () => {
 
   expect(await screen.findByRole("heading", { name: /your wealth, in focus/i })).toBeInTheDocument();
   expect(await screen.findByText("Awaiting data")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /available after reconciliation/i })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /set up local ai in settings/i })).toBeDisabled();
 
   fireEvent.click(screen.getByRole("button", { name: /import data/i }));
   expect(screen.getByRole("heading", { name: /add portfolio data/i })).toBeInTheDocument();

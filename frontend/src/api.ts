@@ -112,6 +112,8 @@ export type ValuationSummary = z.infer<typeof valuationSummarySchema>;
 export type PortfolioSnapshot = z.infer<typeof portfolioSnapshotSchema>;
 export type AllocationReport = z.infer<typeof allocationReportSchema>;
 export type ReconciliationItem = z.infer<typeof reconciliationItemSchema>;
+const portfolioExplanationSchema = z.object({ answer: z.string().min(1), model: z.string(), generated_at: z.string() });
+export type PortfolioExplanation = z.infer<typeof portfolioExplanationSchema>;
 
 export async function getPortfolioSummary(signal?: AbortSignal): Promise<PortfolioSummary> {
   signal?.throwIfAborted();
@@ -150,6 +152,10 @@ export async function setupRecommendedAi(): Promise<AppSettings> {
 
 export async function skipAiSetup(): Promise<AppSettings> {
   return appSettingsSchema.parse(await invoke("skip_ai_setup"));
+}
+
+export async function explainPortfolio(question: string): Promise<PortfolioExplanation> {
+  return portfolioExplanationSchema.parse(await invoke("explain_portfolio", { input: { question } }));
 }
 
 export async function getActivity(signal?: AbortSignal): Promise<ActivityEvent[]> {

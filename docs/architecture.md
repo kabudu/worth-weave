@@ -39,6 +39,8 @@ IBKR open-position sections are persisted as immutable, account-scoped broker sn
 
 Manual market prices and FX rates retain source and RFC 3339 timestamps. Prices older than 36 hours and FX rates older than 48 hours are surfaced as stale without silently discarding the last known deterministic valuation. Gain/loss is computed only when both cost basis and required currency conversion are complete; otherwise it remains unavailable.
 
+Local explanations use the OpenAI-compatible loopback endpoint of the configured runtime. Worthweave serializes only its deterministic valuation, allocation, reconciliation, income, and snapshot outputs. Requests reject non-loopback endpoints, limit question length and response size, use low temperature, and instruct the model not to calculate, predict, invent missing values, or provide personalised financial advice. Model text is never persisted into the ledger.
+
 ## Valuation provenance
 
 Market prices and FX rates are stored as exact coefficients and scales with their observation time and source. Manual entries are explicitly labelled `manual`. Direct and inverse FX pairs are supported. Consolidated portfolio value is returned only when every open holding has a price and every required reporting-currency conversion is available; missing inputs are counted and surfaced rather than treated as zero.

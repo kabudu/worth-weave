@@ -46,6 +46,18 @@ pub struct SaveAiSettingsInput {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ExplainPortfolioInput {
+    pub question: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PortfolioExplanation {
+    pub answer: String,
+    pub model: String,
+    pub generated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct UpdateSettingsInput {
     pub reporting_currency: String,
 }

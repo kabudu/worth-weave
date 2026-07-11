@@ -24,6 +24,8 @@ pub enum LedgerlyError {
     InvalidSettings(String),
     #[error("invalid market data: {0}")]
     InvalidMarketData(String),
+    #[error("local AI request failed: {0}")]
+    LocalAi(String),
     #[error("backup operation failed: {0}")]
     Backup(String),
     #[error("application data directory is unavailable")]

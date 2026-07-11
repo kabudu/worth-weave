@@ -1,7 +1,8 @@
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use crate::error::{LedgerlyError, Result};
-use crate::models::AiRecommendation;
+use crate::models::{AiRecommendation, PortfolioExplanation};
 
 fn memory_gib() -> u64 {
     Command::new("/usr/sbin/sysctl")
@@ -85,6 +86,20 @@ pub fn install(recommendation: &AiRecommendation) -> Result<()> {
                 "model download failed".into(),
             ));
         }
+        Command::new("uv")
+            .args([
+                "tool",
+                "run",
+                "--from",
+                "rapid-mlx==0.10.7",
+                "rapid-mlx",
+                "serve",
+                &recommendation.model,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
     } else {
         if !available("ollama") {
             return Err(LedgerlyError::InvalidSettings(
@@ -101,4 +116,130 @@ pub fn install(recommendation: &AiRecommendation) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct ChatRequest<'a> {
+    model: &'a str,
+    messages: Vec<ChatMessage<'a>>,
+    temperature: f32,
+}
+
+#[derive(serde::Serialize)]
+struct ChatMessage<'a> {
+    role: &'a str,
+    content: &'a str,
+}
+
+#[derive(serde::Deserialize)]
+struct ChatResponse {
+    choices: Vec<ChatChoice>,
+}
+
+#[derive(serde::Deserialize)]
+struct ChatChoice {
+    message: ChatAnswer,
+}
+
+#[derive(serde::Deserialize)]
+struct ChatAnswer {
+    content: String,
+}
+
+pub async fn explain(
+    endpoint: &str,
+    model: &str,
+    question: &str,
+    analytics: &str,
+) -> Result<PortfolioExplanation> {
+    let question = question.trim();
+    if question.is_empty() || question.chars().count() > 500 {
+        return Err(LedgerlyError::LocalAi(
+            "question must contain between 1 and 500 characters".into(),
+        ));
+    }
+    if !(endpoint.starts_with("http://127.0.0.1:") || endpoint.starts_with("http://localhost:")) {
+        return Err(LedgerlyError::LocalAi(
+            "only loopback local-AI endpoints are allowed".into(),
+        ));
+    }
+    let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
+    let system = "You explain a private investment portfolio using only the deterministic JSON analytics supplied by Worthweave. Never recalculate, invent missing values, predict prices, or give personalised financial advice. Clearly state unavailable or stale data. Be concise and cite the relevant values from the context.";
+    let user = format!("Question: {question}\n\nDeterministic analytics JSON:\n{analytics}");
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|error| LedgerlyError::LocalAi(error.to_string()))?;
+    let response = client
+        .post(url)
+        .json(&ChatRequest {
+            model,
+            messages: vec![
+                ChatMessage {
+                    role: "system",
+                    content: system,
+                },
+                ChatMessage {
+                    role: "user",
+                    content: &user,
+                },
+            ],
+            temperature: 0.1,
+        })
+        .send()
+        .await
+        .map_err(|error| LedgerlyError::LocalAi(format!("runtime is unavailable: {error}")))?;
+    if !response.status().is_success() {
+        return Err(LedgerlyError::LocalAi(format!(
+            "runtime returned HTTP {}",
+            response.status()
+        )));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > 1_048_576)
+    {
+        return Err(LedgerlyError::LocalAi(
+            "runtime response is too large".into(),
+        ));
+    }
+    let response: ChatResponse = response
+        .json()
+        .await
+        .map_err(|error| LedgerlyError::LocalAi(format!("invalid runtime response: {error}")))?;
+    let answer = response
+        .choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message.content.trim().to_owned())
+        .filter(|answer| !answer.is_empty())
+        .ok_or_else(|| LedgerlyError::LocalAi("runtime returned no explanation".into()))?;
+    Ok(PortfolioExplanation {
+        answer,
+        model: model.into(),
+        generated_at: chrono::Utc::now().to_rfc3339(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explanations_reject_non_loopback_endpoints() {
+        let result = tauri::async_runtime::block_on(explain(
+            "https://example.com/v1",
+            "test-model",
+            "Summarise my portfolio",
+            "{}",
+        ));
+        assert!(result.is_err());
+        assert!(
+            result
+                .expect_err("remote endpoint must fail")
+                .to_string()
+                .contains("loopback")
+        );
+    }
 }

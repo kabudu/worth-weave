@@ -6,6 +6,7 @@ import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolio
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
+import { InsightsCard } from "./InsightsCard";
 import { ActivityView, IncomeView, PortfolioView } from "./ReportingViews";
 
 const navItems = [
@@ -171,14 +172,7 @@ export function App() {
             </div>
           </article>
 
-          <article className="insight-card" id="insights">
-            <div className="insight-glow" />
-            <div className="insight-title"><span>✦</span><div><small>Worthweave intelligence</small><strong>Ask your portfolio</strong></div></div>
-            <blockquote>“What changed in my portfolio, and why?”</blockquote>
-            <p>Answers will cite deterministic portfolio analytics—not guess at your numbers.</p>
-            <div className="prompt-row"><button type="button">Concentration risk</button><button type="button">Recent income</button></div>
-            <button className="ask-button" type="button" disabled>Available after reconciliation <span>↗</span></button>
-          </article>
+          <InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} />
         </section>
         </>}
 

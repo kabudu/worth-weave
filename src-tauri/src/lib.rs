@@ -11,9 +11,10 @@ use db::AppState;
 use error::{LedgerlyError, Result};
 use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
-    CreateAccountInput, CurrencyOption, FxRate, Holding, ImportResult, IncomeSummary,
-    PortfolioSnapshot, PortfolioSummary, PriceQuote, ReconciliationItem, SaveAiSettingsInput,
-    SetFxRateInput, SetPriceInput, UpdateSettingsInput, ValuationSummary,
+    CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, Holding, ImportResult,
+    IncomeSummary, PortfolioExplanation, PortfolioSnapshot, PortfolioSummary, PriceQuote,
+    ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput, UpdateSettingsInput,
+    ValuationSummary,
 };
 use tauri::{Manager, State};
 
@@ -94,6 +95,31 @@ fn skip_ai_setup(state: State<'_, AppState>) -> Result<AppSettings> {
             },
         )
     })
+}
+
+#[tauri::command]
+async fn explain_portfolio(
+    input: ExplainPortfolioInput,
+    state: State<'_, AppState>,
+) -> Result<PortfolioExplanation> {
+    let (endpoint, model, analytics) = with_connection(&state, |connection| {
+        let settings = db::settings(connection)?;
+        let endpoint = settings.ai_endpoint.ok_or_else(|| {
+            LedgerlyError::LocalAi("local AI is not configured in Settings".into())
+        })?;
+        let model = settings.ai_model.ok_or_else(|| {
+            LedgerlyError::LocalAi("local AI is not configured in Settings".into())
+        })?;
+        let analytics = serde_json::json!({
+            "valuation": market::valuation(connection)?,
+            "allocation": market::allocation(connection).ok(),
+            "reconciliation": projections::reconciliation(connection)?,
+            "income": projections::income(connection)?,
+            "snapshots": market::snapshots(connection)?,
+        });
+        Ok((endpoint, model, analytics.to_string()))
+    })?;
+    ai::explain(&endpoint, &model, &input.question, &analytics).await
 }
 
 #[tauri::command]
@@ -220,6 +246,7 @@ pub fn run() {
             ai_recommendation,
             setup_recommended_ai,
             skip_ai_setup,
+            explain_portfolio,
             list_activity,
             list_holdings,
             income_summary,

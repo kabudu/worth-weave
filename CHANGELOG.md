@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Signed and notarised macOS release automation.
 - Open-source community health files, privacy-aware contribution templates, pull-request CI, Dependabot, and immutable GitHub Action pins.
 - Keep a Changelog validation and tag-driven GitHub Release creation using human-curated release notes.
+- Node 24-compatible Checkout v7 and Dependency Review v5 workflow actions.
 
 ### Security
 

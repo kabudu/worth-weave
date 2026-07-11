@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 
-import { updateSettings, type CurrencyOption } from "./api";
+import { createEncryptedBackup, exportPortfolioJson, restoreEncryptedBackup, updateSettings, type CurrencyOption } from "./api";
 
 type CurrencyFormProps = {
   currencies: CurrencyOption[];
@@ -97,6 +98,30 @@ export function SettingsDialog({ currencies, currentCurrency, open, onClose }: S
         <div><h3>Reporting currency</h3><p>Changes how consolidated portfolio values are presented. Source transactions are never rewritten.</p></div>
         <CurrencyForm currencies={currencies} initialCurrency={currentCurrency} onSaved={onClose} submitLabel="Save changes" />
       </section>
+      <BackupPanel />
     </dialog>
   );
+}
+
+function BackupPanel() {
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("");
+  const backupMutation = useMutation({ mutationFn: async () => {
+    const path = await saveFileDialog({ defaultPath: "worthweave-backup.age", filters: [{ name: "Worthweave encrypted backup", extensions: ["age"] }] });
+    if (path) await createEncryptedBackup(path, password);
+    return path;
+  }, onSuccess: (path) => { if (path) { setStatus("Encrypted backup created."); setPassword(""); } } });
+  const restoreMutation = useMutation({ mutationFn: async () => {
+    const path = await openFileDialog({ multiple: false, directory: false, filters: [{ name: "Worthweave encrypted backup", extensions: ["age"] }] });
+    if (path) await restoreEncryptedBackup(path, password);
+    return path;
+  }, onSuccess: async (path) => { if (path) { setStatus("Backup restored."); setPassword(""); await queryClient.invalidateQueries(); } } });
+  const exportMutation = useMutation({ mutationFn: async () => {
+    const path = await saveFileDialog({ defaultPath: "worthweave-portfolio.json", filters: [{ name: "Worthweave portfolio export", extensions: ["json"] }] });
+    if (path) await exportPortfolioJson(path);
+    return path;
+  }, onSuccess: (path) => { if (path) setStatus("Portfolio report exported."); } });
+  const busy = backupMutation.isPending || restoreMutation.isPending;
+  return <section className="backup-settings"><div><h3>Export &amp; encrypted backup</h3><p>Export a readable portfolio report, or create and restore a complete encrypted backup. Backup passwords cannot be recovered.</p></div><div><label>Backup password<input type="password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="At least 12 characters" /></label><div className="backup-actions"><button type="button" className="secondary-button" disabled={exportMutation.isPending} onClick={() => exportMutation.mutate()}>Export JSON</button><button type="button" className="secondary-button" disabled={password.length < 12 || busy} onClick={() => backupMutation.mutate()}>Create backup</button><button type="button" className="secondary-button" disabled={password.length < 12 || busy} onClick={() => restoreMutation.mutate()}>Restore backup</button></div>{status && <small className="backup-success">{status}</small>}{(backupMutation.isError || restoreMutation.isError || exportMutation.isError) && <small className="form-error">{String(backupMutation.error ?? restoreMutation.error ?? exportMutation.error)}</small>}</div></section>;
 }

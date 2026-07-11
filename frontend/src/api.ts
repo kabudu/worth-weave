@@ -155,6 +155,18 @@ export async function getPortfolioAllocation(signal?: AbortSignal): Promise<Allo
   return allocationReportSchema.parse(await invoke("portfolio_allocation"));
 }
 
+export async function createEncryptedBackup(path: string, password: string): Promise<void> {
+  await invoke("create_encrypted_backup", { input: { path, password } });
+}
+
+export async function restoreEncryptedBackup(path: string, password: string): Promise<void> {
+  await invoke("restore_encrypted_backup", { input: { path, password } });
+}
+
+export async function exportPortfolioJson(path: string): Promise<void> {
+  await invoke("export_portfolio_json", { path });
+}
+
 export async function createAccount(input: {
   broker: Broker;
   account_type: AccountType;

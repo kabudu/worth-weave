@@ -15,10 +15,12 @@
 - Broker adapters are read-only and do not include order-placement capability.
 - Database errors do not expose raw records to the interface.
 - Dependency lockfiles are committed and audited at milestones.
+- Backups use the age file format with passphrase-based authenticated encryption. Passwords are passed directly to Rust, are never persisted, and must contain at least 12 characters.
+- Restore is bounded to 1 GiB, validates SQLite integrity and the Worthweave schema, then uses SQLite's backup API to replace live state.
 
 ## Explicitly deferred
 
-- Encrypted backups and database-at-rest encryption
+- Database-at-rest encryption
 - macOS Keychain integration for broker tokens
 - Hosted authentication, authorization, tenant isolation, and abuse controls
 - Signed/notarized macOS application packaging

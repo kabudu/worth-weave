@@ -158,3 +158,9 @@ pub struct AllocationReport {
     pub by_account: Vec<AllocationSlice>,
     pub by_currency: Vec<AllocationSlice>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BackupInput {
+    pub path: String,
+    pub password: String,
+}

@@ -38,3 +38,7 @@ The application creates a singleton settings record during database initializati
 Market prices and FX rates are stored as exact coefficients and scales with their observation time and source. Manual entries are explicitly labelled `manual`. Direct and inverse FX pairs are supported. Consolidated portfolio value is returned only when every open holding has a price and every required reporting-currency conversion is available; missing inputs are counted and surfaced rather than treated as zero.
 
 The frontend currently uses TypeScript 6.0 because the stable `typescript-eslint` parser does not yet declare TypeScript 7 support. This should be revisited when its supported range advances.
+
+## Portability
+
+JSON exports are versioned, human-readable portfolio reports. Complete backups use age passphrase encryption and contain a consistent SQLite snapshot. Restore is size-bounded, authenticated, integrity-checked, schema-checked, and copied into the live database only after validation succeeds.

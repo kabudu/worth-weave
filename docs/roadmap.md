@@ -11,7 +11,7 @@ Worthweave v1 is complete when a macOS user can onboard, import supported broker
 - [ ] Position reconciliation against broker snapshots and explicit partial-history diagnostics.
 - [ ] Market prices and FX rates with timestamps, sources, staleness, and manual overrides.
 - [ ] Reporting-currency value, gain/loss, allocation, snapshots, and historical performance.
-- [ ] Export plus encrypted, versioned backup and restore.
+- [x] Human-readable portfolio export plus encrypted, versioned backup and restore.
 - [ ] Optional Ollama explanations grounded only in deterministic analytics.
 - [ ] Versioned migrations, accessibility and end-to-end coverage, signing/notarisation readiness.
 

@@ -1,3 +1,4 @@
+mod backup;
 mod db;
 mod error;
 mod imports;
@@ -8,9 +9,10 @@ mod projections;
 use db::AppState;
 use error::{LedgerlyError, Result};
 use models::{
-    Account, ActivityEvent, AllocationReport, AppSettings, CreateAccountInput, CurrencyOption,
-    FxRate, Holding, ImportResult, IncomeSummary, PortfolioSnapshot, PortfolioSummary, PriceQuote,
-    SetFxRateInput, SetPriceInput, UpdateSettingsInput, ValuationSummary,
+    Account, ActivityEvent, AllocationReport, AppSettings, BackupInput, CreateAccountInput,
+    CurrencyOption, FxRate, Holding, ImportResult, IncomeSummary, PortfolioSnapshot,
+    PortfolioSummary, PriceQuote, SetFxRateInput, SetPriceInput, UpdateSettingsInput,
+    ValuationSummary,
 };
 use tauri::{Manager, State};
 
@@ -103,6 +105,35 @@ fn portfolio_allocation(state: State<'_, AppState>) -> Result<AllocationReport> 
 }
 
 #[tauri::command]
+fn create_encrypted_backup(input: BackupInput, state: State<'_, AppState>) -> Result<()> {
+    with_connection(&state, |connection| {
+        backup::create(
+            connection,
+            std::path::Path::new(&input.path),
+            input.password,
+        )
+    })
+}
+
+#[tauri::command]
+fn restore_encrypted_backup(input: BackupInput, state: State<'_, AppState>) -> Result<()> {
+    with_connection(&state, |connection| {
+        backup::restore(
+            connection,
+            std::path::Path::new(&input.path),
+            input.password,
+        )
+    })
+}
+
+#[tauri::command]
+fn export_portfolio_json(path: String, state: State<'_, AppState>) -> Result<()> {
+    with_connection(&state, |connection| {
+        backup::export_json(connection, std::path::Path::new(&path))
+    })
+}
+
+#[tauri::command]
 fn import_broker_file(
     account_id: String,
     file_path: String,
@@ -151,6 +182,9 @@ pub fn run() {
             capture_portfolio_snapshot,
             list_portfolio_snapshots,
             portfolio_allocation,
+            create_encrypted_backup,
+            restore_encrypted_backup,
+            export_portfolio_json,
             import_broker_file
         ])
         .run(tauri::generate_context!())
@@ -315,5 +349,48 @@ mod tests {
         assert_eq!(holdings[0].quantity, "-4");
         assert!(!holdings[0].cost_basis_complete);
         assert!(holdings[0].cost_basis.is_none());
+    }
+
+    #[test]
+    fn encrypted_backup_round_trip_restores_validated_database() {
+        let directory = tempdir().expect("temp directory");
+        let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        db::update_settings(
+            &connection,
+            &UpdateSettingsInput {
+                reporting_currency: "EUR".into(),
+            },
+        )
+        .expect("settings");
+        let path = directory.path().join("portfolio.worthweave-age");
+        backup::create(&connection, &path, "a strong test password".into()).expect("backup");
+        assert!(
+            !std::fs::read(&path)
+                .expect("encrypted bytes")
+                .starts_with(b"SQLite format 3\0")
+        );
+        db::update_settings(
+            &connection,
+            &UpdateSettingsInput {
+                reporting_currency: "GBP".into(),
+            },
+        )
+        .expect("mutate settings");
+        backup::restore(&mut connection, &path, "a strong test password".into()).expect("restore");
+        assert_eq!(
+            db::settings(&connection)
+                .expect("restored settings")
+                .reporting_currency
+                .as_deref(),
+            Some("EUR")
+        );
+        assert!(backup::restore(&mut connection, &path, "incorrect password".into()).is_err());
+        let export_path = directory.path().join("portfolio.json");
+        backup::export_json(&connection, &export_path).expect("JSON export");
+        let exported: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(export_path).expect("exported JSON"))
+                .expect("valid JSON");
+        assert_eq!(exported["format"], "worthweave-portfolio-export");
+        assert_eq!(exported["version"], 1);
     }
 }

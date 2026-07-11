@@ -14,9 +14,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+age = "0.11.3"
 chrono = { version = "0.4.45", features = ["serde"] }
 csv = "1.4.0"
-rusqlite = { version = "0.40.1", features = ["bundled", "uuid"] }
+rusqlite = { version = "0.40.1", features = ["backup", "bundled", "uuid"] }
 rust_decimal = { version = "1.42.1", features = ["serde-with-str"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
@@ -24,7 +25,5 @@ sha2 = "0.11.0"
 tauri = { version = "2.11.5", features = [] }
 tauri-plugin-dialog = "2.7.1"
 thiserror = "2.0.18"
+tempfile = "3.27.0"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
-
-[dev-dependencies]
-tempfile = "3"

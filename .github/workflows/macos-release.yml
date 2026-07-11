@@ -31,6 +31,8 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
       APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
     steps:
       - name: Resolve release ref
@@ -88,6 +90,7 @@ jobs:
           : "${APPLE_ID:?APPLE_ID must be configured}"
           : "${APPLE_PASSWORD:?APPLE_PASSWORD must be configured}"
           : "${APPLE_TEAM_ID:?APPLE_TEAM_ID must be configured}"
+          : "${TAURI_SIGNING_PRIVATE_KEY:?TAURI_SIGNING_PRIVATE_KEY must be configured}"
           xcrun notarytool history \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
@@ -143,8 +146,8 @@ jobs:
           pnpm --dir frontend audit --prod
           pnpm --dir frontend test:e2e
 
-      - name: Build, sign, and notarize
-        run: frontend/node_modules/.bin/tauri build --ci
+      - name: Build, sign, notarize, and create updater archive
+        run: frontend/node_modules/.bin/tauri build --ci --config '{"bundle":{"createUpdaterArtifacts":true}}'
 
       - name: Verify signed and notarized artifacts
         shell: bash
@@ -152,8 +155,11 @@ jobs:
           set -euo pipefail
           app="src-tauri/target/release/bundle/macos/Worthweave.app"
           dmg="$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          updater="$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
           test -d "$app"
           test -n "$dmg"
+          test -n "$updater"
+          test -s "${updater}.sig"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign_details="$(codesign --display --verbose=4 "$app" 2>&1)"
           grep -F "Authority=$APPLE_SIGNING_IDENTITY" <<<"$codesign_details"
@@ -164,6 +170,22 @@ jobs:
           hdiutil verify "$dmg"
           shasum -a 256 "$dmg" > "${dmg}.sha256"
 
+      - name: Create updater manifest
+        if: steps.release.outputs.tag != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/release-notes.md"
+          updater="$(find src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
+          scripts/extract-release-notes.sh "${{ steps.release.outputs.tag }}" > "$notes"
+          node scripts/create-updater-manifest.mjs \
+            "${{ steps.release.outputs.tag }}" \
+            darwin-aarch64 \
+            "$updater" \
+            "${updater}.sig" \
+            "$notes" \
+            src-tauri/target/release/bundle/macos/latest.json
+
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -173,6 +195,9 @@ jobs:
           path: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/dmg/*.sha256
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/release/bundle/macos/latest.json
 
       - name: Create GitHub release and upload artifacts
         if: steps.release.outputs.tag != ''
@@ -192,4 +217,7 @@ jobs:
           gh release upload "${{ steps.release.outputs.tag }}" \
             src-tauri/target/release/bundle/dmg/*.dmg \
             src-tauri/target/release/bundle/dmg/*.sha256 \
+            src-tauri/target/release/bundle/macos/*.app.tar.gz \
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig \
+            src-tauri/target/release/bundle/macos/latest.json \
             --clobber

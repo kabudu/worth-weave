@@ -51,6 +51,14 @@ main { padding: 0 5.2vw 30px; min-width: 0; overflow: hidden; }
 .icon-button { width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.45); color: #52615b; }
 .primary-button { border: 0; border-radius: 10px; color: white; background: #124f3f; padding: 10px 16px; font-size: 11px; font-weight: 600; box-shadow: 0 8px 25px rgba(18,79,63,.16); }
 .primary-button span { margin-right: 5px; color: #a5e4bf; }
+.update-banner { margin:16px 0 0;padding:13px 14px;border:1px solid rgba(18,94,72,.14);border-radius:14px;background:linear-gradient(110deg,#e4f4e9,#f1f7ed);display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:12px;box-shadow:0 9px 26px rgba(31,92,67,.06); }
+.update-icon { width:32px;height:32px;border-radius:10px;background:#175b46;color:#b9ebce;display:grid;place-items:center;font-weight:800; }
+.update-copy strong,.update-copy span,.update-copy small { display:block; }
+.update-copy strong { color:#173c30;font:650 12px "Manrope Variable",sans-serif; }
+.update-copy span { color:#587168;font-size:9px;margin-top:3px; }
+.update-copy small { color:#963f2c;font-size:8px;margin-top:4px;overflow-wrap:anywhere; }
+.update-banner button { border:0;border-radius:9px;background:#124f3f;color:white;padding:9px 12px;font-size:9px;font-weight:700;white-space:nowrap; }
+.update-banner button:disabled { opacity:.6;cursor:wait; }
 
 .hero { padding: 50px 0 34px; display: flex; justify-content: space-between; align-items: center; gap: 50px; position: relative; }
 .hero::after { content:""; position:absolute; width:420px; height:250px; right:-130px; top:-30px; background: radial-gradient(circle,rgba(109,200,154,.14),transparent 68%); pointer-events:none; }
@@ -235,6 +243,7 @@ footer { font-size:10px; }
 @media (max-width: 1100px) { .attribution-components { grid-template-columns:repeat(4,1fr); }.attribution-components article:nth-child(5) { border-left:0; } }
 @media (max-width: 700px) { .attribution-heading { display:grid; }.attribution-total { min-width:0;text-align:left; }.attribution-components { grid-template-columns:repeat(2,1fr); }.attribution-components article:nth-child(odd) { border-left:0; } }
 @media (max-width: 600px) { .account-picker>div { grid-template-columns:1fr; } }
+@media (max-width: 700px) { .update-banner { grid-template-columns:34px 1fr; }.update-banner button { grid-column:1/-1;width:100%; } }
 
 @media (min-width: 981px) {
   .onboarding-panel { padding:32px clamp(48px,4.5vw,64px); }

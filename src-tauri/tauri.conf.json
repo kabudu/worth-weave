@@ -37,9 +37,17 @@
     ],
     "category": "Finance",
     "shortDescription": "Private portfolio intelligence",
-    "longDescription": "A local-first investment portfolio for Trading 212 and Interactive Brokers.",
+    "longDescription": "A local-first investment portfolio for Trading 212, Interactive Brokers, and Robinhood.",
     "macOS": {
       "minimumSystemVersion": "13.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/kabudu/worth-weave/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIyNzFCOTZCNDQyMDNDQTYKUldTbVBDQkVhN2x4SWpJT1VtcnBmR2xPbUVOZXhESkpEUjhSUzBtSXA1eDNrN2RKbDBIM3hKUVcK"
     }
   }
 }

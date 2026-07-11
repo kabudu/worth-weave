@@ -8,6 +8,7 @@ import { App } from "./App";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+  isTauri: () => false,
 }));
 
 const currencies = [

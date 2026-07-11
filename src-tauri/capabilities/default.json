@@ -3,5 +3,11 @@
   "identifier": "main-window",
   "description": "Minimal permissions for the Worthweave main window",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open", "dialog:allow-save"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "process:allow-restart",
+    "updater:default"
+  ]
 }

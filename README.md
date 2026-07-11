@@ -38,6 +38,7 @@ Financial results come from deterministic Rust code using exact decimal represen
 - Configurable reporting currency without rewriting source transactions.
 - Human-readable JSON export plus encrypted, versioned backup and restore.
 - Optional device-tuned local AI through Rapid-MLX or Ollama.
+- Signed in-app updates with a clear install-and-restart prompt.
 - Native Apple Silicon macOS application with no Python runtime or web server.
 
 ## First run
@@ -112,7 +113,7 @@ Create local `.app` and `.dmg` bundles with:
 frontend/node_modules/.bin/tauri build
 ```
 
-Pushing a changelog-backed `vMAJOR.MINOR.PATCH` tag runs `.github/workflows/macos-release.yml`. It imports the Developer ID certificate into an ephemeral keychain, runs the release gates, signs and notarises the application, verifies Gatekeeper and stapled tickets, creates the GitHub Release from the matching changelog section, and publishes the DMG with its SHA-256 checksum.
+Pushing a changelog-backed `vMAJOR.MINOR.PATCH` tag runs `.github/workflows/macos-release.yml`. It imports the Developer ID certificate into an ephemeral keychain, runs the release gates, signs and notarises the application, verifies Gatekeeper and stapled tickets, creates the GitHub Release from the matching changelog section, and publishes the DMG with its SHA-256 checksum. It also publishes a separately signed updater archive and manifest used by Worthweave’s in-app update prompt.
 
 See the [release process](docs/release.md) for required GitHub secrets and variables.
 

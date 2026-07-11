@@ -8,6 +8,7 @@ import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
 import { InsightsCard } from "./InsightsCard";
 import { ActivityView, IncomeView, PortfolioView } from "./ReportingViews";
+import { UpdateBanner } from "./UpdateBanner";
 
 const navItems = [
   ["Overview", "⌁"],
@@ -122,6 +123,8 @@ export function App() {
             <button className="primary-button" type="button" onClick={() => setImportOpen(true)}><span>＋</span> Import data</button>
           </div>
         </header>
+
+        <UpdateBanner />
 
         {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} attribution={attribution.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private AI</span><h1>Ask about your portfolio</h1><p>Get clear answers based on the figures already shown in Worthweave.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} /></section> : <>
         <section className="hero" aria-labelledby="welcome-title">

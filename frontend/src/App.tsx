@@ -47,9 +47,9 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#top" aria-label="Ledgerly home">
+        <a className="brand" href="#top" aria-label="Worthweave home">
           <BrandMark />
-          <span>ledgerly</span>
+          <span>worthweave</span>
         </a>
         <nav aria-label="Primary navigation">
           {navItems.map(([label, icon], index) => (
@@ -132,13 +132,13 @@ export function App() {
             <div className="journey-steps">
               <div className="journey-step current"><span>1</span><div><strong>Create your accounts</strong><p>Keep Invest and ISA histories safely separated.</p></div><button type="button" onClick={() => setImportOpen(true)}>Begin <span>→</span></button></div>
               <div className="journey-step"><span>2</span><div><strong>Import broker history</strong><p>Drop in CSV files now and add later periods anytime.</p></div><small>Next</small></div>
-              <div className="journey-step"><span>3</span><div><strong>Reconcile and explore</strong><p>Ledgerly checks holdings before showing performance.</p></div><small>Then</small></div>
+              <div className="journey-step"><span>3</span><div><strong>Reconcile and explore</strong><p>Worthweave checks holdings before showing performance.</p></div><small>Then</small></div>
             </div>
           </article>
 
           <article className="insight-card" id="insights">
             <div className="insight-glow" />
-            <div className="insight-title"><span>✦</span><div><small>Ledgerly intelligence</small><strong>Ask your portfolio</strong></div></div>
+            <div className="insight-title"><span>✦</span><div><small>Worthweave intelligence</small><strong>Ask your portfolio</strong></div></div>
             <blockquote>“What changed in my portfolio, and why?”</blockquote>
             <p>Answers will cite deterministic portfolio analytics—not guess at your numbers.</p>
             <div className="prompt-row"><button type="button">Concentration risk</button><button type="button">Recent income</button></div>
@@ -146,7 +146,7 @@ export function App() {
           </article>
         </section>
 
-        <footer><span>Ledgerly · Local mode</span><span>Deterministic ledger <i /> Private AI ready</span></footer>
+        <footer><span>Worthweave · Local mode</span><span>Deterministic ledger <i /> Private AI ready</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       </main>
     </div>

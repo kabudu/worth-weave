@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -25,7 +26,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
   const [broker, setBroker] = useState<Broker>("trading_212");
   const [accountType, setAccountType] = useState<AccountType>("stocks_and_shares_isa");
   const [displayName, setDisplayName] = useState("Trading 212 ISA");
-  const [file, setFile] = useState<File | null>(null);
+  const [filePath, setFilePath] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
 
   useEffect(() => {
@@ -46,7 +47,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
     },
   });
   const importMutation = useMutation({
-    mutationFn: ({ account, source }: { account: Account; source: File }) =>
+    mutationFn: ({ account, source }: { account: Account; source: string }) =>
       importBrokerFile(account, source),
     onSuccess: async (nextResult) => {
       setResult(nextResult);
@@ -62,7 +63,16 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
   function handleImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const account = accounts.data?.find((candidate) => candidate.id === effectiveSelectedId);
-    if (account && file) importMutation.mutate({ account, source: file });
+    if (account && filePath) importMutation.mutate({ account, source: filePath });
+  }
+
+  async function chooseFile() {
+    const selected = await openFileDialog({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Broker CSV export", extensions: ["csv"] }],
+    });
+    if (selected) setFilePath(selected);
   }
 
   function close() {
@@ -106,8 +116,8 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
             <h3>Choose a CSV export</h3>
             <p>The file is processed locally and protected from duplicate imports.</p>
             <label>Destination account<select value={effectiveSelectedId} required onChange={(event) => setSelectedId(event.target.value)}><option value="" disabled>Select an account</option>{accounts.data?.map((account) => <option value={account.id} key={account.id}>{account.display_name}</option>)}</select></label>
-            <label className="file-drop"><input type="file" accept=".csv,text/csv" required onChange={(event) => setFile(event.target.files?.[0] ?? null)} /><span>{file ? file.name : "Choose CSV file"}</span><small>Maximum 50 MB · CSV only</small></label>
-            <button type="submit" className="primary-button" disabled={!effectiveSelectedId || !file || importMutation.isPending}>{importMutation.isPending ? "Verifying…" : "Verify and import"}</button>
+            <button className="file-drop" type="button" onClick={chooseFile}><span>{filePath ? filePath.split(/[\\/]/).at(-1) : "Choose CSV file"}</span><small>Maximum 50 MB · CSV only</small></button>
+            <button type="submit" className="primary-button" disabled={!effectiveSelectedId || !filePath || importMutation.isPending}>{importMutation.isPending ? "Verifying…" : "Verify and import"}</button>
             {importMutation.isError && <small className="form-error" role="alert">{importMutation.error.message}</small>}
           </form>
         </div>

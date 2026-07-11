@@ -10,10 +10,10 @@
 ## Current controls
 
 - `.dev/`, SQLite files, caches, and build output are ignored by Git.
-- API configuration rejects non-loopback binding unless explicitly enabled in a future deployment mode.
+- The Tauri webview uses a narrow IPC allowlist and a restrictive content security policy; no local HTTP server is exposed.
 - Imports use bounded file sizes, schema validation, content hashes, and atomic transactions.
 - Broker adapters are read-only and do not include order-placement capability.
-- Database errors do not expose raw records in API responses.
+- Database errors do not expose raw records to the interface.
 - Dependency lockfiles are committed and audited at milestones.
 
 ## Explicitly deferred

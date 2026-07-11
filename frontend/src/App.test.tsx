@@ -5,24 +5,18 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { App } from "./App";
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async (command: string) => command === "list_accounts" ? [] : {
+    base_currency: "GBP",
+    account_count: 0,
+    import_count: 0,
+    data_status: "awaiting_imports",
+  }),
+}));
+
 afterEach(() => vi.restoreAllMocks());
 
 test("renders truthful empty portfolio state", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-    const url = input.toString();
-    const body = url.endsWith("/accounts")
-      ? []
-      : {
-          base_currency: "GBP",
-          account_count: 0,
-          import_count: 0,
-          data_status: "awaiting_imports",
-        };
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   render(

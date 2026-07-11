@@ -1,40 +1,31 @@
 # Architecture
 
-## Product boundaries
-
-Ledgerly begins as a single-user, local-first macOS application. Its domain and API boundaries deliberately avoid assumptions that would prevent a future hosted, multi-user deployment.
+Worthweave is a single-user, local-first macOS application packaged as a Tauri app. Rust owns the ledger and all deterministic financial behavior; React communicates with it through a narrow Tauri command boundary.
 
 ```text
-Broker export/API -> adapter -> validated canonical events -> SQLite ledger
-                                                           |
-React UI <- typed local API <- deterministic projections <-+
-                                      |
-                                      +-> Ollama explanations
+Broker CSV -> Rust adapter -> validated canonical events -> bundled SQLite
+                                                        |
+React UI <- typed Tauri IPC <- deterministic views <----+
+                                |
+                                +-> future local LLM explanations
 ```
 
 ## Invariants
 
-1. An event always belongs to an explicit broker account.
-2. A source file cannot be committed twice to the same account.
-3. Import validation completes before a database transaction mutates ledger state.
-4. Monetary quantities use `Decimal` and retain their original currency.
-5. GBP conversion retains the applied rate, rate date, and source.
-6. Partial history is represented with coverage intervals and never reported as complete.
-7. LLM output cannot create or alter holdings, returns, cost basis, or source records.
+1. Every event belongs to an explicit broker account and account type.
+2. Content hashes and broker identifiers prevent duplicate and overlapping imports.
+3. Parsing and validation complete before a transaction mutates ledger state.
+4. Financial values use exact scaled integers: a signed coefficient plus a decimal scale.
+5. Cash is normalized to the currency minor-unit scale when that is lossless; higher broker precision is retained rather than rounded.
+6. Quantities, prices, FX rates, and cost basis retain their source precision. Binary floating point is never ledger truth.
+7. Partial history is represented with coverage intervals and never reported as complete.
+8. LLM output cannot create or alter holdings, returns, cost basis, or source records.
 
 ## Components
 
-- `ledgerly.domain`: canonical financial types and invariants.
-- `ledgerly.importers`: isolated platform-specific schema adapters.
-- `ledgerly.persistence`: SQLite models, sessions, and migrations.
-- `ledgerly.services`: application use cases and transaction boundaries.
-- `ledgerly.api`: loopback HTTP interface consumed by the frontend.
-- `frontend`: accessible React/TypeScript application.
+- `src-tauri/src/imports.rs`: bounded, account-aware Trading 212 and IBKR adapters.
+- `src-tauri/src/db.rs`: bundled SQLite schema and persistence boundary.
+- `src-tauri/src/lib.rs`: minimal typed commands exposed to the webview.
+- `frontend`: React/TypeScript interface using Tailwind 4 design tokens.
 
-## Growth path
-
-A hosted product would add authenticated users, tenant ownership on every aggregate, encrypted managed storage, background jobs, rate-limited integrations, and an external secrets manager. Those concerns remain outside the local MVP but the account and service boundaries are compatible with them.
-
-## Toolchain compatibility
-
-The frontend uses TypeScript 6.0 rather than TypeScript 7.0 because the current stable `typescript-eslint` release declares support below TypeScript 6.1. This constraint keeps lint analysis supported instead of silently running the newest compiler through an incompatible parser. It should be revisited when `typescript-eslint` publishes TypeScript 7 support.
+The frontend currently uses TypeScript 6.0 because the stable `typescript-eslint` parser does not yet declare TypeScript 7 support. This should be revisited when its supported range advances.

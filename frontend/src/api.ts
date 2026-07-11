@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invoke } from "@tauri-apps/api/core";
 
 const portfolioSummarySchema = z.object({
   base_currency: z.literal("GBP"),
@@ -31,17 +32,13 @@ export type AccountType = Account["account_type"];
 export type ImportResult = z.infer<typeof importResultSchema>;
 
 export async function getPortfolioSummary(signal?: AbortSignal): Promise<PortfolioSummary> {
-  const response = await fetch("/api/v1/portfolio/summary", { signal });
-  if (!response.ok) {
-    throw new Error("The local portfolio service is unavailable.");
-  }
-  return portfolioSummarySchema.parse(await response.json());
+  signal?.throwIfAborted();
+  return portfolioSummarySchema.parse(await invoke("portfolio_summary"));
 }
 
 export async function getAccounts(signal?: AbortSignal): Promise<Account[]> {
-  const response = await fetch("/api/v1/accounts", { signal });
-  if (!response.ok) throw new Error("Accounts could not be loaded.");
-  return z.array(accountSchema).parse(await response.json());
+  signal?.throwIfAborted();
+  return z.array(accountSchema).parse(await invoke("list_accounts"));
 }
 
 export async function createAccount(input: {
@@ -49,29 +46,13 @@ export async function createAccount(input: {
   account_type: AccountType;
   display_name: string;
 }): Promise<Account> {
-  const response = await fetch("/api/v1/accounts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...input,
-      external_id: `${input.broker}:${input.account_type}:${crypto.randomUUID()}`,
-    }),
-  });
-  if (!response.ok) throw new Error("The account could not be created.");
-  return accountSchema.parse(await response.json());
+  return accountSchema.parse(await invoke("create_account", { input }));
 }
 
-export async function importBrokerFile(account: Account, file: File): Promise<ImportResult> {
-  const form = new FormData();
-  form.set("confirmed_account_type", account.account_type);
-  form.set("file", file);
-  const response = await fetch(`/api/v1/accounts/${account.id}/imports`, {
-    method: "POST",
-    body: form,
-  });
-  if (!response.ok) {
-    const detail = z.object({ detail: z.string() }).safeParse(await response.json());
-    throw new Error(detail.success ? detail.data.detail : "The broker file could not be imported.");
-  }
-  return importResultSchema.parse(await response.json());
+export async function importBrokerFile(account: Account, filePath: string): Promise<ImportResult> {
+  return importResultSchema.parse(await invoke("import_broker_file", {
+    accountId: account.id,
+    filePath,
+    confirmedAccountType: account.account_type,
+  }));
 }

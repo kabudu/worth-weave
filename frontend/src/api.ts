@@ -69,7 +69,8 @@ const activityEventSchema = z.object({
 });
 const holdingSchema = z.object({
   account_id: z.string().uuid(), account_name: z.string(), broker: z.enum(["trading_212", "ibkr"]),
-  instrument_id: z.string(), quantity: exactString, cost_basis: exactString.nullable(),
+  instrument_id: z.string(), symbol: z.string().nullable(), name: z.string().nullable(),
+  quantity: exactString, cost_basis: exactString.nullable(),
   average_cost: exactString.nullable(), currency: z.string().nullable(), cost_basis_complete: z.boolean(),
 });
 const incomeSummarySchema = z.object({
@@ -94,6 +95,12 @@ const allocationReportSchema = z.object({
   by_account: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
   by_currency: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
 });
+const reconciliationItemSchema = z.object({
+  account_id: z.string().uuid(), account_name: z.string(), instrument_id: z.string(),
+  as_of: z.string().nullable(), ledger_quantity: exactString,
+  broker_quantity: exactString.nullable(), difference: exactString.nullable(),
+  status: z.enum(["matched", "mismatch", "unavailable"]),
+});
 
 export type ActivityEvent = z.infer<typeof activityEventSchema>;
 export type Holding = z.infer<typeof holdingSchema>;
@@ -101,6 +108,7 @@ export type IncomeSummary = z.infer<typeof incomeSummarySchema>;
 export type ValuationSummary = z.infer<typeof valuationSummarySchema>;
 export type PortfolioSnapshot = z.infer<typeof portfolioSnapshotSchema>;
 export type AllocationReport = z.infer<typeof allocationReportSchema>;
+export type ReconciliationItem = z.infer<typeof reconciliationItemSchema>;
 
 export async function getPortfolioSummary(signal?: AbortSignal): Promise<PortfolioSummary> {
   signal?.throwIfAborted();
@@ -181,6 +189,11 @@ export async function capturePortfolioSnapshot(): Promise<PortfolioSnapshot> {
 export async function getPortfolioAllocation(signal?: AbortSignal): Promise<AllocationReport> {
   signal?.throwIfAborted();
   return allocationReportSchema.parse(await invoke("portfolio_allocation"));
+}
+
+export async function getPortfolioReconciliation(signal?: AbortSignal): Promise<ReconciliationItem[]> {
+  signal?.throwIfAborted();
+  return z.array(reconciliationItemSchema).parse(await invoke("portfolio_reconciliation"));
 }
 
 export async function createEncryptedBackup(path: string, password: string): Promise<void> {

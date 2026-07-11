@@ -17,7 +17,7 @@ const currencies = [
 
 function mockNativeCommands(onboardingComplete: boolean, aiOnboardingComplete = true) {
   vi.mocked(invoke).mockImplementation(async (command) => {
-    if (["list_accounts", "list_holdings", "list_activity", "income_summary", "list_portfolio_snapshots"].includes(command)) return [];
+    if (["list_accounts", "list_holdings", "list_activity", "income_summary", "list_portfolio_snapshots", "portfolio_reconciliation"].includes(command)) return [];
     if (command === "list_currencies") return currencies;
     if (command === "get_settings") return {
       reporting_currency: onboardingComplete ? "GBP" : null,

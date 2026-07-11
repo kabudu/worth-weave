@@ -138,6 +138,13 @@ pub fn open(path: &Path) -> Result<Connection> {
            imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
            UNIQUE (account_id, content_sha256)
          );
+         CREATE TABLE IF NOT EXISTS instruments (
+           id TEXT PRIMARY KEY NOT NULL,
+           symbol TEXT,
+           name TEXT,
+           isin TEXT,
+           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
          CREATE TABLE IF NOT EXISTS events (
            id TEXT PRIMARY KEY NOT NULL,
            account_id TEXT NOT NULL REFERENCES accounts(id),
@@ -177,6 +184,16 @@ pub fn open(path: &Path) -> Result<Connection> {
            reporting_currency TEXT NOT NULL,
            total_coefficient TEXT NOT NULL,
            total_scale INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS broker_position_snapshots (
+           id TEXT PRIMARY KEY NOT NULL,
+           account_id TEXT NOT NULL REFERENCES accounts(id),
+           import_batch_id TEXT NOT NULL REFERENCES import_batches(id),
+           report_date TEXT NOT NULL,
+           instrument_id TEXT NOT NULL,
+           quantity_coefficient TEXT NOT NULL,
+           quantity_scale INTEGER NOT NULL,
+           UNIQUE (account_id, report_date, instrument_id)
          );",
     )?;
     for (column, definition) in [

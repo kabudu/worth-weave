@@ -4,7 +4,7 @@ use rusqlite::Connection;
 use rust_decimal::Decimal;
 
 use crate::error::Result;
-use crate::models::{ActivityEvent, Holding, IncomeSummary};
+use crate::models::{ActivityEvent, Holding, IncomeSummary, ReconciliationItem};
 
 fn exact(coefficient: Option<String>, scale: Option<u32>) -> Option<Decimal> {
     let coefficient = coefficient?.parse::<i128>().ok()?;
@@ -49,14 +49,17 @@ struct Position {
     cost_basis: Decimal,
     currency: Option<String>,
     basis_complete: bool,
+    symbol: Option<String>,
+    name: Option<String>,
 }
 
 pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
     let mut statement = connection.prepare(
         "SELECT e.account_id, a.display_name, a.broker, e.instrument_id, e.event_type,
                 e.amount_coefficient, e.amount_scale, e.currency,
-                e.quantity_coefficient, e.quantity_scale
+                e.quantity_coefficient, e.quantity_scale, i.symbol, i.name
          FROM events e JOIN accounts a ON a.id = e.account_id
+         LEFT JOIN instruments i ON i.id=e.instrument_id
          WHERE e.instrument_id IS NOT NULL AND e.event_type IN ('buy', 'sell')
          ORDER BY e.occurred_at, e.id",
     )?;
@@ -71,6 +74,8 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
         let amount = exact(row.get(5)?, row.get(6)?).unwrap_or_default().abs();
         let quantity = exact(row.get(8)?, row.get(9)?).unwrap_or_default().abs();
         let currency: Option<String> = row.get(7)?;
+        let symbol: Option<String> = row.get(10)?;
+        let name: Option<String> = row.get(11)?;
         if quantity.is_zero() {
             continue;
         }
@@ -85,6 +90,8 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 broker,
                 currency,
                 basis_complete: true,
+                symbol,
+                name,
                 ..Position::default()
             });
         if event_type == "buy" {
@@ -121,6 +128,8 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 account_name: position.account_name,
                 broker: position.broker,
                 instrument_id,
+                symbol: position.symbol,
+                name: position.name,
                 quantity: position.quantity.normalize().to_string(),
                 cost_basis: (position.basis_complete && position.currency.is_some())
                     .then(|| position.cost_basis.normalize().to_string()),
@@ -159,4 +168,86 @@ pub fn income(connection: &Connection) -> Result<Vec<IncomeSummary>> {
             total: (dividends + interest).normalize().to_string(),
         })
         .collect())
+}
+
+pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>> {
+    let holdings = holdings(connection)?;
+    let mut broker = BTreeMap::new();
+    let mut statement = connection.prepare(
+        "SELECT p.account_id, p.instrument_id, p.report_date,
+                p.quantity_coefficient, p.quantity_scale
+         FROM broker_position_snapshots p
+         JOIN (
+           SELECT account_id, MAX(report_date) AS report_date
+           FROM broker_position_snapshots GROUP BY account_id
+         ) latest ON latest.account_id=p.account_id AND latest.report_date=p.report_date",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            (row.get::<_, String>(0)?, row.get::<_, String>(1)?),
+            (
+                row.get::<_, String>(2)?,
+                exact(row.get(3)?, row.get(4)?).unwrap_or_default(),
+            ),
+        ))
+    })?;
+    for row in rows {
+        let (key, value) = row?;
+        broker.insert(key, value);
+    }
+
+    let mut result = Vec::new();
+    for holding in holdings {
+        let ledger = holding.quantity.parse::<Decimal>().unwrap_or_default();
+        let snapshot = broker.remove(&(holding.account_id.clone(), holding.instrument_id.clone()));
+        let (as_of, broker_quantity, difference, status) = match snapshot {
+            Some((date, quantity)) => {
+                let delta = ledger - quantity;
+                (
+                    Some(date),
+                    Some(quantity.normalize().to_string()),
+                    Some(delta.normalize().to_string()),
+                    if delta.is_zero() {
+                        "matched"
+                    } else {
+                        "mismatch"
+                    },
+                )
+            }
+            None => (None, None, None, "unavailable"),
+        };
+        result.push(ReconciliationItem {
+            account_id: holding.account_id,
+            account_name: holding.account_name,
+            instrument_id: holding.instrument_id,
+            as_of,
+            ledger_quantity: ledger.normalize().to_string(),
+            broker_quantity,
+            difference,
+            status,
+        });
+    }
+    for ((account_id, instrument_id), (date, quantity)) in broker {
+        let account_name = connection.query_row(
+            "SELECT display_name FROM accounts WHERE id=?1",
+            [&account_id],
+            |row| row.get(0),
+        )?;
+        result.push(ReconciliationItem {
+            account_id,
+            account_name,
+            instrument_id,
+            as_of: Some(date),
+            ledger_quantity: "0".into(),
+            broker_quantity: Some(quantity.normalize().to_string()),
+            difference: Some((-quantity).normalize().to_string()),
+            status: "mismatch",
+        });
+    }
+    result.sort_by(|left, right| {
+        left.account_name
+            .cmp(&right.account_name)
+            .then(left.instrument_id.cmp(&right.instrument_id))
+    });
+    Ok(result)
 }

@@ -74,6 +74,18 @@ pub struct ImportResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ReconciliationItem {
+    pub account_id: String,
+    pub account_name: String,
+    pub instrument_id: String,
+    pub as_of: Option<String>,
+    pub ledger_quantity: String,
+    pub broker_quantity: Option<String>,
+    pub difference: Option<String>,
+    pub status: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ActivityEvent {
     pub id: String,
     pub account_id: String,
@@ -94,6 +106,8 @@ pub struct Holding {
     pub account_name: String,
     pub broker: String,
     pub instrument_id: String,
+    pub symbol: Option<String>,
+    pub name: Option<String>,
     pub quantity: String,
     pub cost_basis: Option<String>,
     pub average_cost: Option<String>,

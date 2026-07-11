@@ -25,6 +25,8 @@ struct Event {
     currency: Option<String>,
     quantity: Option<ExactValue>,
     instrument_id: Option<String>,
+    symbol: Option<String>,
+    name: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -38,6 +40,16 @@ struct ParsedImport {
     end: NaiveDate,
     events: Vec<Event>,
     warnings: Vec<String>,
+    positions: Vec<PositionSnapshot>,
+}
+
+#[derive(Debug)]
+struct PositionSnapshot {
+    report_date: NaiveDate,
+    instrument_id: String,
+    quantity: ExactValue,
+    symbol: Option<String>,
+    name: Option<String>,
 }
 
 fn parse_date(value: &str, context: &str) -> Result<(NaiveDate, String)> {
@@ -197,6 +209,14 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
+        let symbol = field(&row, &positions, "Ticker")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
+        let name = field(&row, &positions, "Name")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned);
         events.push(Event {
             source_id: format!("t212:{source}"),
             event_type: action_type(action),
@@ -210,6 +230,8 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
             currency,
             quantity,
             instrument_id,
+            symbol,
+            name,
         });
     }
     let start = dates
@@ -223,6 +245,7 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
         end,
         events,
         warnings: Vec::new(),
+        positions: Vec::new(),
     })
 }
 
@@ -239,7 +262,15 @@ fn section(header: &[String]) -> Option<&'static str> {
             .iter()
             .all(|field| header.iter().any(|value| value == field))
     };
-    if has(&["TradeID", "BuySell", "TradeMoney"]) {
+    if has(&[
+        "ReportDate",
+        "Quantity",
+        "MarkPrice",
+        "PositionValue",
+        "CostBasisMoney",
+    ]) {
+        Some("open_positions")
+    } else if has(&["TradeID", "BuySell", "TradeMoney"]) {
         Some("trades")
     } else if has(&["TransactionID", "Amount", "Type", "ActionID"]) {
         Some("cash_transactions")
@@ -310,6 +341,7 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
     let mut ignored = false;
     let mut dates = Vec::new();
     let mut events = Vec::new();
+    let mut positions = Vec::new();
     for (offset, record) in reader.records().enumerate() {
         let values =
             record.map_err(|error| LedgerlyError::Csv(format!("row {}: {error}", offset + 1)))?;
@@ -343,6 +375,42 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
         let Some(section) = current_section else {
             continue;
         };
+        if section == "open_positions" {
+            if row
+                .get("LevelOfDetail")
+                .is_some_and(|value| !value.is_empty() && !value.eq_ignore_ascii_case("summary"))
+            {
+                continue;
+            }
+            let Some(instrument_id) = row
+                .get("ISIN")
+                .or_else(|| row.get("Conid"))
+                .filter(|value| !value.trim().is_empty())
+            else {
+                continue;
+            };
+            let Some(report_date) = row.get("ReportDate").filter(|value| !value.is_empty()) else {
+                continue;
+            };
+            let (report_date, _) =
+                parse_date(report_date, &format!("ReportDate at row {}", offset + 1))?;
+            if let Some(quantity) = decimal(
+                row.get("Quantity").map(String::as_str),
+                &format!("Quantity at row {}", offset + 1),
+            )? {
+                positions.push(PositionSnapshot {
+                    report_date,
+                    instrument_id: instrument_id.clone(),
+                    quantity: exact_value(quantity, None),
+                    symbol: row.get("Symbol").filter(|value| !value.is_empty()).cloned(),
+                    name: row
+                        .get("Description")
+                        .filter(|value| !value.is_empty())
+                        .cloned(),
+                });
+            }
+            continue;
+        }
         let occurred_raw = ["DateTime", "Date", "ReportDate", "TradeDate"]
             .iter()
             .find_map(|field| row.get(*field).filter(|value| !value.is_empty()));
@@ -394,6 +462,11 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
                 .or_else(|| row.get("Conid"))
                 .filter(|value| !value.is_empty())
                 .cloned(),
+            symbol: row.get("Symbol").filter(|value| !value.is_empty()).cloned(),
+            name: row
+                .get("Description")
+                .filter(|value| !value.is_empty())
+                .cloned(),
         });
     }
     let start = dates
@@ -412,6 +485,7 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
         end,
         events,
         warnings,
+        positions,
     })
 }
 
@@ -469,7 +543,45 @@ pub fn import_csv(
     let transaction = connection.transaction()?;
     transaction.execute("INSERT INTO import_batches (id, account_id, original_filename, content_sha256, coverage_start, coverage_end) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![batch_id, account_id, path.file_name().and_then(|value| value.to_str()).unwrap_or("broker-export.csv"), digest, parsed.start.to_string(), parsed.end.to_string()])?;
     for event in &new_events {
+        if let Some(instrument_id) = &event.instrument_id {
+            transaction.execute(
+                "INSERT INTO instruments (id, symbol, name, isin) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(id) DO UPDATE SET
+                   symbol=COALESCE(excluded.symbol, instruments.symbol),
+                   name=COALESCE(excluded.name, instruments.name),
+                   isin=COALESCE(excluded.isin, instruments.isin), updated_at=CURRENT_TIMESTAMP",
+                params![instrument_id, event.symbol, event.name, instrument_id],
+            )?;
+        }
         transaction.execute("INSERT INTO events (id, account_id, import_batch_id, source_id, event_type, occurred_at, description, amount_coefficient, amount_scale, currency, quantity_coefficient, quantity_scale, instrument_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)", params![Uuid::new_v4().to_string(), account_id, batch_id, event.source_id, event.event_type, event.occurred_at, event.description, event.amount.as_ref().map(|value| &value.coefficient), event.amount.as_ref().map(|value| value.scale), event.currency, event.quantity.as_ref().map(|value| &value.coefficient), event.quantity.as_ref().map(|value| value.scale), event.instrument_id])?;
+    }
+    for position in &parsed.positions {
+        transaction.execute(
+            "INSERT INTO instruments (id, symbol, name, isin) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+               symbol=COALESCE(excluded.symbol, instruments.symbol),
+               name=COALESCE(excluded.name, instruments.name),
+               isin=COALESCE(excluded.isin, instruments.isin), updated_at=CURRENT_TIMESTAMP",
+            params![
+                position.instrument_id,
+                position.symbol,
+                position.name,
+                position.instrument_id
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(account_id, report_date, instrument_id) DO UPDATE SET
+               import_batch_id=excluded.import_batch_id,
+               quantity_coefficient=excluded.quantity_coefficient,
+               quantity_scale=excluded.quantity_scale",
+            params![
+                Uuid::new_v4().to_string(), account_id, batch_id,
+                position.report_date.to_string(), position.instrument_id,
+                position.quantity.coefficient, position.quantity.scale
+            ],
+        )?;
     }
     transaction.commit()?;
     Ok(ImportResult {
@@ -527,6 +639,20 @@ mod tests {
         assert_eq!(parsed.events.len(), 1);
         assert_eq!(parsed.events[0].event_type, "buy");
         assert_eq!(parsed.start.to_string(), "2024-03-15");
+    }
+
+    #[test]
+    fn ibkr_parser_captures_summary_position_snapshots() {
+        let parsed = parse_ibkr(b"ClientAccountID,CurrencyPrimary,ReportDate,Quantity,MarkPrice,PositionValue,CostBasisMoney,LevelOfDetail,ISIN,Conid\nU1,GBP,2026-07-10,2.5,10,25,20,Summary,GB00TEST0001,123\n").expect("valid position section");
+        assert_eq!(parsed.positions.len(), 1);
+        assert_eq!(parsed.positions[0].instrument_id, "GB00TEST0001");
+        assert_eq!(
+            parsed.positions[0].quantity,
+            ExactValue {
+                coefficient: "25".into(),
+                scale: 1
+            }
+        );
     }
 
     #[test]

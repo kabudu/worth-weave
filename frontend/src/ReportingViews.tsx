@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { capturePortfolioSnapshot, type ActivityEvent, type AllocationReport, type CurrencyOption, type Holding, type IncomeSummary, type PortfolioSnapshot, type ValuationSummary } from "./api";
+import { capturePortfolioSnapshot, type ActivityEvent, type AllocationReport, type CurrencyOption, type Holding, type IncomeSummary, type PortfolioSnapshot, type ReconciliationItem, type ValuationSummary } from "./api";
 import { MarketDataDialog } from "./MarketDataDialog";
 
 function money(value: string | null, currency: string | null) {
@@ -24,9 +24,10 @@ type PortfolioProps = {
   snapshots: PortfolioSnapshot[];
   currencies: CurrencyOption[];
   reportingCurrency: string;
+  reconciliation: ReconciliationItem[];
 };
 
-export function PortfolioView({ holdings, valuation, allocation, snapshots, currencies, reportingCurrency }: PortfolioProps) {
+export function PortfolioView({ holdings, valuation, allocation, snapshots, currencies, reportingCurrency, reconciliation }: PortfolioProps) {
   const [marketOpen, setMarketOpen] = useState(false);
   const queryClient = useQueryClient();
   const snapshotMutation = useMutation({ mutationFn: capturePortfolioSnapshot, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["snapshots"] }) });
@@ -38,10 +39,17 @@ export function PortfolioView({ holdings, valuation, allocation, snapshots, curr
     <header className="report-title-row"><div><span className="section-kicker">Deterministic ledger</span><h1>Your holdings</h1><p>Quantities and average cost are reconstructed from imported broker events.</p></div><div className="valuation-total"><span>Portfolio value · {reportingCurrency}</span><strong>{money(valuation?.total_value ?? null, reportingCurrency)}</strong>{valuation && !valuation.total_value && <small>{valuation.missing_price_count} prices · {valuation.missing_fx_count} FX rates missing</small>}<button type="button" onClick={() => setMarketOpen(true)}>Update prices &amp; FX</button></div></header>
     {holdings.length === 0 ? <EmptyState title="No open holdings yet" copy="Import transaction history to reconstruct your positions." /> : <><div className="report-table-wrap"><table><thead><tr><th>Instrument</th><th>Account</th><th>Quantity</th><th>Average cost</th><th>Cost basis</th><th>Market value</th><th>{reportingCurrency} value</th></tr></thead><tbody>{holdings.map((holding) => {
       const item = valued.get(`${holding.account_id}-${holding.instrument_id}-${holding.currency}`);
-      return <tr key={`${holding.account_id}-${holding.instrument_id}-${holding.currency}`}><td><strong>{holding.instrument_id}</strong><small>{brokerName(holding.broker)}</small></td><td>{holding.account_name}</td><td className="number">{holding.quantity}</td><td className="number">{holding.cost_basis_complete ? money(holding.average_cost, holding.currency) : <span className="basis-warning">Incomplete history</span>}</td><td className="number">{holding.cost_basis_complete ? money(holding.cost_basis, holding.currency) : "—"}</td><td className="number">{money(item?.market_value ?? null, item?.price?.currency ?? null)}</td><td className="number">{money(item?.reporting_value ?? null, reportingCurrency)}</td></tr>;
+      return <tr key={`${holding.account_id}-${holding.instrument_id}-${holding.currency}`}><td><strong>{holding.symbol ?? holding.instrument_id}</strong><small>{holding.name ?? `${brokerName(holding.broker)} · ${holding.instrument_id}`}</small></td><td>{holding.account_name}</td><td className="number">{holding.quantity}</td><td className="number">{holding.cost_basis_complete ? money(holding.average_cost, holding.currency) : <span className="basis-warning">Incomplete history</span>}</td><td className="number">{holding.cost_basis_complete ? money(holding.cost_basis, holding.currency) : "—"}</td><td className="number">{money(item?.market_value ?? null, item?.price?.currency ?? null)}</td><td className="number">{money(item?.reporting_value ?? null, reportingCurrency)}</td></tr>;
     })}</tbody></table></div><section className="performance-card"><div><span className="section-kicker">Portfolio history</span><h2>Valuation snapshots</h2><p>Capture a point-in-time total after prices and FX are complete.</p></div><div className="snapshot-chart">{snapshots.length === 0 ? <small>No snapshots yet</small> : snapshots.slice(-12).map((snapshot) => <span key={snapshot.id} title={`${snapshot.captured_at}: ${snapshot.total_value} ${snapshot.reporting_currency}`} style={{ height: `${Math.max(12, Number(snapshot.total_value) / Math.max(...snapshots.map((item) => Number(item.total_value))) * 100)}%` }} />)}</div><button type="button" className="secondary-button" disabled={!valuation?.total_value || snapshotMutation.isPending} onClick={() => snapshotMutation.mutate()}>{snapshotMutation.isPending ? "Capturing…" : "Capture snapshot"}</button>{snapshotMutation.isError && <small className="form-error">{String(snapshotMutation.error)}</small>}</section>{allocation && <section className="allocation-grid"><AllocationCard title="By account" slices={allocation.by_account} currency={allocation.reporting_currency} /><AllocationCard title="By source currency" slices={allocation.by_currency} currency={allocation.reporting_currency} /></section>}</>}
+    <ReconciliationPanel items={reconciliation} />
     <MarketDataDialog open={marketOpen} onClose={() => setMarketOpen(false)} holdings={holdings} currencies={currencies} reportingCurrency={reportingCurrency} />
   </section>;
+}
+
+function ReconciliationPanel({ items }: { items: ReconciliationItem[] }) {
+  if (items.length === 0) return null;
+  const matched = items.filter((item) => item.status === "matched").length;
+  return <section className="reconciliation-card" aria-labelledby="reconciliation-title"><div><span className="section-kicker">Broker check</span><h2 id="reconciliation-title">Position reconciliation</h2><p>{matched} of {items.length} positions match the latest available broker snapshot.</p></div><div className="reconciliation-list">{items.map((item) => <div key={`${item.account_id}-${item.instrument_id}`}><span className={`reconciliation-status ${item.status}`}>{item.status}</span><strong>{item.instrument_id}</strong><small>{item.account_name} · ledger {item.ledger_quantity} · broker {item.broker_quantity ?? "not supplied"}{item.as_of ? ` · ${item.as_of}` : ""}</small></div>)}</div></section>;
 }
 
 function AllocationCard({ title, slices, currency }: { title: string; slices: AllocationReport["by_account"]; currency: string }) {

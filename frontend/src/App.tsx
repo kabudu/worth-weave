@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 
-import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings } from "./api";
+import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
@@ -61,6 +61,7 @@ export function App() {
   const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal) });
   const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal) });
   const allocation = useQuery({ queryKey: ["allocation"], queryFn: ({ signal }) => getPortfolioAllocation(signal), retry: false });
+  const reconciliation = useQuery({ queryKey: ["reconciliation"], queryFn: ({ signal }) => getPortfolioReconciliation(signal) });
   const accountCount = summary.data?.account_count ?? 0;
   const importCount = summary.data?.import_count ?? 0;
   const reportingCurrency = settings.data?.reporting_currency ?? "GBP";
@@ -116,7 +117,7 @@ export function App() {
           </div>
         </header>
 
-        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} valuation={valuation.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : <>
+        {activeView === "Portfolio" ? <PortfolioView holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
             <p className="kicker">Saturday, 11 July</p>

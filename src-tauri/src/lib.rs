@@ -12,8 +12,8 @@ use error::{LedgerlyError, Result};
 use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
     CreateAccountInput, CurrencyOption, FxRate, Holding, ImportResult, IncomeSummary,
-    PortfolioSnapshot, PortfolioSummary, PriceQuote, SaveAiSettingsInput, SetFxRateInput,
-    SetPriceInput, UpdateSettingsInput, ValuationSummary,
+    PortfolioSnapshot, PortfolioSummary, PriceQuote, ReconciliationItem, SaveAiSettingsInput,
+    SetFxRateInput, SetPriceInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Manager, State};
 
@@ -111,6 +111,11 @@ fn list_holdings(state: State<'_, AppState>) -> Result<Vec<Holding>> {
 #[tauri::command]
 fn income_summary(state: State<'_, AppState>) -> Result<Vec<IncomeSummary>> {
     with_connection(&state, |connection| projections::income(connection))
+}
+
+#[tauri::command]
+fn portfolio_reconciliation(state: State<'_, AppState>) -> Result<Vec<ReconciliationItem>> {
+    with_connection(&state, |connection| projections::reconciliation(connection))
 }
 
 #[tauri::command]
@@ -218,6 +223,7 @@ pub fn run() {
             list_activity,
             list_holdings,
             income_summary,
+            portfolio_reconciliation,
             set_market_price,
             set_fx_rate,
             portfolio_valuation,
@@ -322,6 +328,24 @@ mod tests {
         assert_eq!(holdings[0].quantity, "6");
         assert_eq!(holdings[0].cost_basis.as_deref(), Some("60"));
         assert_eq!(holdings[0].average_cost.as_deref(), Some("10"));
+        assert_eq!(holdings[0].symbol.as_deref(), Some("TEST"));
+        assert_eq!(
+            projections::reconciliation(&connection).expect("reconciliation")[0].status,
+            "unavailable"
+        );
+        let batch_id: String = connection
+            .query_row("SELECT id FROM import_batches LIMIT 1", [], |row| {
+                row.get(0)
+            })
+            .expect("batch");
+        connection.execute(
+            "INSERT INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale) VALUES (?1, ?2, ?3, '2026-03-31', 'GB00TEST0001', '6', 0)",
+            rusqlite::params![uuid::Uuid::new_v4().to_string(), account.id, batch_id],
+        ).expect("broker snapshot");
+        assert_eq!(
+            projections::reconciliation(&connection).expect("reconciliation")[0].status,
+            "matched"
+        );
         assert_eq!(
             projections::activity(&connection, 100)
                 .expect("activity")

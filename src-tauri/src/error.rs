@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
-pub enum LedgerlyError {
+pub enum WorthweaveError {
     #[error("database operation failed")]
     Database(#[from] rusqlite::Error),
     #[error("filesystem operation failed")]
@@ -38,7 +38,7 @@ pub enum LedgerlyError {
     StateUnavailable,
 }
 
-impl Serialize for LedgerlyError {
+impl Serialize for WorthweaveError {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -47,4 +47,4 @@ impl Serialize for LedgerlyError {
     }
 }
 
-pub type Result<T> = std::result::Result<T, LedgerlyError>;
+pub type Result<T> = std::result::Result<T, WorthweaveError>;

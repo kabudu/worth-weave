@@ -311,7 +311,7 @@ pub fn update_instrument_metadata(
         .flatten()
         .any(|value| value.chars().count() > 80)
     {
-        return Err(crate::error::LedgerlyError::InvalidSettings(
+        return Err(crate::error::WorthweaveError::InvalidSettings(
             "instrument classification must be 80 characters or fewer".into(),
         ));
     }
@@ -320,7 +320,7 @@ pub fn update_instrument_metadata(
         params![input.instrument_id, asset_class, sector, geography],
     )?;
     if changed == 0 {
-        return Err(crate::error::LedgerlyError::InvalidSettings(
+        return Err(crate::error::WorthweaveError::InvalidSettings(
             "instrument does not exist".into(),
         ));
     }
@@ -366,7 +366,7 @@ pub fn accounts(connection: &Connection) -> Result<Vec<Account>> {
 
 pub fn create_account(connection: &Connection, input: &CreateAccountInput) -> Result<Account> {
     if !matches!(input.broker.as_str(), "trading_212" | "ibkr" | "robinhood") {
-        return Err(crate::error::LedgerlyError::InvalidAccount(
+        return Err(crate::error::WorthweaveError::InvalidAccount(
             "unsupported broker".into(),
         ));
     }
@@ -390,12 +390,12 @@ pub fn create_account(connection: &Connection, input: &CreateAccountInput) -> Re
         _ => false,
     };
     if !valid_type {
-        return Err(crate::error::LedgerlyError::InvalidAccount(
+        return Err(crate::error::WorthweaveError::InvalidAccount(
             "unsupported account type".into(),
         ));
     }
     if input.display_name.trim().is_empty() || input.display_name.chars().count() > 160 {
-        return Err(crate::error::LedgerlyError::InvalidAccount(
+        return Err(crate::error::WorthweaveError::InvalidAccount(
             "account name must contain 1 to 160 characters".into(),
         ));
     }
@@ -477,7 +477,7 @@ pub fn update_settings(
         .iter()
         .any(|candidate| candidate.code == currency)
     {
-        return Err(crate::error::LedgerlyError::InvalidSettings(
+        return Err(crate::error::WorthweaveError::InvalidSettings(
             "unsupported reporting currency".into(),
         ));
     }

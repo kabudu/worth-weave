@@ -2,15 +2,7 @@
 .dev/
 
 # Local runtimes, caches, databases, and generated artifacts.
-.venv/
 .cache/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.coverage
-htmlcov/
-.mypy_cache/
-.ruff_cache/
 *.db
 *.db-*
 node_modules/

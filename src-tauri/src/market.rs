@@ -5,7 +5,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use rust_decimal::Decimal;
 
 use crate::db;
-use crate::error::{LedgerlyError, Result};
+use crate::error::{Result, WorthweaveError};
 use crate::models::{
     AllocationReport, AllocationSlice, FxRate, PortfolioSnapshot, PriceQuote, SetFxRateInput,
     SetPriceInput, TotalReturnAttribution, ValuationSummary, ValuedHolding,
@@ -19,7 +19,7 @@ fn parse_positive(value: &str, field: &str) -> Result<Decimal> {
         .ok()
         .filter(|value| *value > Decimal::ZERO)
         .ok_or_else(|| {
-            LedgerlyError::InvalidMarketData(format!("{field} must be a positive decimal"))
+            WorthweaveError::InvalidMarketData(format!("{field} must be a positive decimal"))
         })
 }
 
@@ -31,7 +31,7 @@ fn parts(value: Decimal) -> (String, u32) {
 fn from_parts(coefficient: String, scale: u32) -> Result<Decimal> {
     let coefficient = coefficient
         .parse::<i128>()
-        .map_err(|_| LedgerlyError::InvalidMarketData("stored decimal is invalid".into()))?;
+        .map_err(|_| WorthweaveError::InvalidMarketData("stored decimal is invalid".into()))?;
     Ok(Decimal::from_i128_with_scale(coefficient, scale))
 }
 
@@ -54,7 +54,7 @@ fn validate_currency(currency: &str) -> Result<String> {
     {
         Ok(currency)
     } else {
-        Err(LedgerlyError::InvalidMarketData(
+        Err(WorthweaveError::InvalidMarketData(
             "unsupported currency".into(),
         ))
     }
@@ -63,7 +63,7 @@ fn validate_currency(currency: &str) -> Result<String> {
 pub fn set_price(connection: &Connection, input: &SetPriceInput) -> Result<PriceQuote> {
     let instrument_id = input.instrument_id.trim();
     if instrument_id.is_empty() || instrument_id.chars().count() > 128 {
-        return Err(LedgerlyError::InvalidMarketData(
+        return Err(WorthweaveError::InvalidMarketData(
             "instrument identifier is invalid".into(),
         ));
     }
@@ -92,7 +92,7 @@ pub fn set_fx_rate(connection: &Connection, input: &SetFxRateInput) -> Result<Fx
     let base_currency = validate_currency(&input.base_currency)?;
     let quote_currency = validate_currency(&input.quote_currency)?;
     if base_currency == quote_currency {
-        return Err(LedgerlyError::InvalidMarketData(
+        return Err(WorthweaveError::InvalidMarketData(
             "FX currencies must differ".into(),
         ));
     }
@@ -162,8 +162,9 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
     let mut gain_complete = true;
     let mut valued = Vec::new();
     for holding in projections::holdings(connection)? {
-        let quantity = Decimal::from_str(&holding.quantity)
-            .map_err(|_| LedgerlyError::InvalidMarketData("holding quantity is invalid".into()))?;
+        let quantity = Decimal::from_str(&holding.quantity).map_err(|_| {
+            WorthweaveError::InvalidMarketData("holding quantity is invalid".into())
+        })?;
         let quote = price(connection, &holding.instrument_id)?;
         let (price_quote, market_value, reporting_value) = if let Some((price_quote, price)) = quote
         {
@@ -200,7 +201,7 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
             match (&holding.cost_basis, &holding.currency) {
                 (Some(cost), Some(currency)) => {
                     let cost = Decimal::from_str(cost).map_err(|_| {
-                        LedgerlyError::InvalidMarketData("holding cost basis is invalid".into())
+                        WorthweaveError::InvalidMarketData("holding cost basis is invalid".into())
                     })?;
                     if let Some((rate, _)) = fx(connection, currency, &reporting_currency)? {
                         Some((cost * rate).normalize().to_string())
@@ -466,12 +467,12 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
 pub fn capture_snapshot(connection: &Connection) -> Result<PortfolioSnapshot> {
     let valuation = valuation(connection)?;
     let total = valuation.total_value.ok_or_else(|| {
-        LedgerlyError::InvalidMarketData(
+        WorthweaveError::InvalidMarketData(
             "add current prices and exchange rates for every investment before saving today’s value".into(),
         )
     })?;
     let total_decimal = Decimal::from_str(&total)
-        .map_err(|_| LedgerlyError::InvalidMarketData("valuation total is invalid".into()))?;
+        .map_err(|_| WorthweaveError::InvalidMarketData("valuation total is invalid".into()))?;
     let (coefficient, scale) = parts(total_decimal);
     let snapshot = PortfolioSnapshot {
         id: Uuid::new_v4().to_string(),
@@ -520,16 +521,17 @@ pub fn allocation(connection: &Connection) -> Result<AllocationReport> {
         .total_value
         .as_deref()
         .ok_or_else(|| {
-            LedgerlyError::InvalidMarketData(
+            WorthweaveError::InvalidMarketData(
                 "allocation requires a complete portfolio valuation".into(),
             )
         })
         .and_then(|value| {
-            Decimal::from_str(value)
-                .map_err(|_| LedgerlyError::InvalidMarketData("valuation total is invalid".into()))
+            Decimal::from_str(value).map_err(|_| {
+                WorthweaveError::InvalidMarketData("valuation total is invalid".into())
+            })
         })?;
     if total <= Decimal::ZERO {
-        return Err(LedgerlyError::InvalidMarketData(
+        return Err(WorthweaveError::InvalidMarketData(
             "allocation requires a positive portfolio value".into(),
         ));
     }
@@ -540,8 +542,10 @@ pub fn allocation(connection: &Connection) -> Result<AllocationReport> {
     let mut sectors: BTreeMap<String, Decimal> = BTreeMap::new();
     let mut geographies: BTreeMap<String, Decimal> = BTreeMap::new();
     for item in valuation.holdings {
-        let value = Decimal::from_str(item.reporting_value.as_deref().unwrap_or("0"))
-            .map_err(|_| LedgerlyError::InvalidMarketData("holding valuation is invalid".into()))?;
+        let value =
+            Decimal::from_str(item.reporting_value.as_deref().unwrap_or("0")).map_err(|_| {
+                WorthweaveError::InvalidMarketData("holding valuation is invalid".into())
+            })?;
         *accounts.entry(item.holding.account_name).or_default() += value;
         *platforms.entry(item.holding.broker.clone()).or_default() += value;
         *asset_classes

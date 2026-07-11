@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::db;
-use crate::error::{LedgerlyError, Result};
+use crate::error::{Result, WorthweaveError};
 use crate::models::ImportResult;
 
 const MAX_IMPORT_BYTES: u64 = 50 * 1024 * 1024;
@@ -73,7 +73,7 @@ fn parse_date(value: &str, context: &str) -> Result<(NaiveDate, String)> {
     }
     NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .map(|date| (date, format!("{date}T00:00:00")))
-        .map_err(|_| LedgerlyError::Csv(format!("invalid date in {context}")))
+        .map_err(|_| WorthweaveError::Csv(format!("invalid date in {context}")))
 }
 
 fn decimal(value: Option<&str>, context: &str) -> Result<Option<Decimal>> {
@@ -82,7 +82,7 @@ fn decimal(value: Option<&str>, context: &str) -> Result<Option<Decimal>> {
     };
     Decimal::from_str(value.replace(',', "").as_str())
         .map(Some)
-        .map_err(|_| LedgerlyError::Csv(format!("invalid decimal in {context}")))
+        .map_err(|_| WorthweaveError::Csv(format!("invalid decimal in {context}")))
 }
 
 fn exact_value(value: Decimal, minimum_scale: Option<u32>) -> ExactValue {
@@ -159,16 +159,16 @@ fn action_type(action: &str) -> &'static str {
 
 fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
     let text = std::str::from_utf8(content)
-        .map_err(|_| LedgerlyError::Csv("Trading 212 export must be UTF-8 CSV".into()))?
+        .map_err(|_| WorthweaveError::Csv("Trading 212 export must be UTF-8 CSV".into()))?
         .trim_start_matches('\u{feff}');
     let mut reader = csv::ReaderBuilder::new().from_reader(text.as_bytes());
     let headers = reader
         .headers()
-        .map_err(|error| LedgerlyError::Csv(error.to_string()))?
+        .map_err(|error| WorthweaveError::Csv(error.to_string()))?
         .clone();
     for required in ["Action", "Time", "ID"] {
         if !headers.iter().any(|header| header == required) {
-            return Err(LedgerlyError::Csv(format!(
+            return Err(WorthweaveError::Csv(format!(
                 "Trading 212 export is missing column: {required}"
             )));
         }
@@ -182,7 +182,7 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
     let mut dates = Vec::new();
     for (offset, record) in reader.records().enumerate() {
         let row =
-            record.map_err(|error| LedgerlyError::Csv(format!("row {}: {error}", offset + 2)))?;
+            record.map_err(|error| WorthweaveError::Csv(format!("row {}: {error}", offset + 2)))?;
         let action = field(&row, &positions, "Action").unwrap_or("").trim();
         let (date, occurred_at) = parse_date(
             field(&row, &positions, "Time").unwrap_or(""),
@@ -241,11 +241,10 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
             asset_class: None,
         });
     }
-    let start = dates
-        .iter()
-        .min()
-        .copied()
-        .ok_or_else(|| LedgerlyError::Csv("Trading 212 export contains no data rows".into()))?;
+    let start =
+        dates.iter().min().copied().ok_or_else(|| {
+            WorthweaveError::Csv("Trading 212 export contains no data rows".into())
+        })?;
     let end = dates.iter().max().copied().expect("non-empty dates");
     Ok(ParsedImport {
         start,
@@ -346,7 +345,7 @@ fn ibkr_type(section: &str, row: &HashMap<String, String>) -> &'static str {
 
 fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
     let text = std::str::from_utf8(content)
-        .map_err(|_| LedgerlyError::Csv("IBKR export must be UTF-8 CSV".into()))?
+        .map_err(|_| WorthweaveError::Csv("IBKR export must be UTF-8 CSV".into()))?
         .trim_start_matches('\u{feff}');
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
@@ -360,7 +359,7 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
     let mut positions = Vec::new();
     for (offset, record) in reader.records().enumerate() {
         let values =
-            record.map_err(|error| LedgerlyError::Csv(format!("row {}: {error}", offset + 1)))?;
+            record.map_err(|error| WorthweaveError::Csv(format!("row {}: {error}", offset + 1)))?;
         if values.is_empty() {
             continue;
         }
@@ -375,7 +374,9 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
             continue;
         }
         let names = header.as_ref().ok_or_else(|| {
-            LedgerlyError::Csv("IBKR export does not begin with a recognized section header".into())
+            WorthweaveError::Csv(
+                "IBKR export does not begin with a recognized section header".into(),
+            )
         })?;
         let row: HashMap<String, String> = names
             .iter()
@@ -500,11 +501,10 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
                 .cloned(),
         });
     }
-    let start = dates
-        .iter()
-        .min()
-        .copied()
-        .ok_or_else(|| LedgerlyError::Csv("IBKR export contains no dated data rows".into()))?;
+    let start =
+        dates.iter().min().copied().ok_or_else(|| {
+            WorthweaveError::Csv("IBKR export contains no dated data rows".into())
+        })?;
     let end = dates.iter().max().copied().expect("non-empty dates");
     let warnings = if ignored {
         vec![
@@ -534,19 +534,19 @@ pub fn import_csv(
         .and_then(|value| value.to_str())
         .is_none_or(|value| !value.eq_ignore_ascii_case("csv"))
     {
-        return Err(LedgerlyError::UnsupportedFile);
+        return Err(WorthweaveError::UnsupportedFile);
     }
     let (broker, account_type) =
-        db::account_identity(connection, account_id)?.ok_or(LedgerlyError::AccountNotFound)?;
+        db::account_identity(connection, account_id)?.ok_or(WorthweaveError::AccountNotFound)?;
     if account_type != confirmed_account_type {
-        return Err(LedgerlyError::AccountTypeMismatch);
+        return Err(WorthweaveError::AccountTypeMismatch);
     }
     let mut content = Vec::new();
     std::fs::File::open(path)?
         .take(MAX_IMPORT_BYTES + 1)
         .read_to_end(&mut content)?;
     if content.len() as u64 > MAX_IMPORT_BYTES {
-        return Err(LedgerlyError::ImportTooLarge);
+        return Err(WorthweaveError::ImportTooLarge);
     }
     let digest = hex(&Sha256::digest(&content));
     let duplicate: Option<String> = connection
@@ -557,16 +557,16 @@ pub fn import_csv(
         )
         .optional()?;
     if duplicate.is_some() {
-        return Err(LedgerlyError::DuplicateImport);
+        return Err(WorthweaveError::DuplicateImport);
     }
     let parsed = match broker.as_str() {
         "trading_212" => parse_trading212(&content)?,
         "ibkr" => parse_ibkr(&content)?,
-        "robinhood" => return Err(LedgerlyError::UnsupportedBrokerImport),
-        _ => return Err(LedgerlyError::UnsupportedBrokerImport),
+        "robinhood" => return Err(WorthweaveError::UnsupportedBrokerImport),
+        _ => return Err(WorthweaveError::UnsupportedBrokerImport),
     };
     if parsed.events.len().saturating_add(parsed.positions.len()) > MAX_IMPORT_ROWS {
-        return Err(LedgerlyError::ImportRowLimit);
+        return Err(WorthweaveError::ImportRowLimit);
     }
     for event in &parsed.events {
         if event.source_id.chars().count() > 512
@@ -576,7 +576,7 @@ pub fn import_csv(
                 .as_ref()
                 .is_some_and(|value| value.chars().count() > 128)
         {
-            return Err(LedgerlyError::Csv(
+            return Err(WorthweaveError::Csv(
                 "import contains an oversized identifier or description".into(),
             ));
         }
@@ -586,7 +586,7 @@ pub fn import_csv(
         .iter()
         .any(|position| position.instrument_id.chars().count() > 128)
     {
-        return Err(LedgerlyError::Csv(
+        return Err(WorthweaveError::Csv(
             "import contains an oversized instrument identifier".into(),
         ));
     }
@@ -778,7 +778,7 @@ mod tests {
         .expect("export");
         assert!(matches!(
             import_csv(&mut connection, &account.id, &path, "individual_brokerage"),
-            Err(LedgerlyError::UnsupportedBrokerImport)
+            Err(WorthweaveError::UnsupportedBrokerImport)
         ));
     }
 

@@ -8,7 +8,7 @@ mod models;
 mod projections;
 
 use db::AppState;
-use error::{LedgerlyError, Result};
+use error::{Result, WorthweaveError};
 use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
     CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, Holding, ImportResult,
@@ -25,7 +25,7 @@ fn with_connection<T>(
     let mut connection = state
         .connection
         .lock()
-        .map_err(|_| LedgerlyError::StateUnavailable)?;
+        .map_err(|_| WorthweaveError::StateUnavailable)?;
     operation(&mut connection)
 }
 
@@ -71,7 +71,7 @@ async fn setup_recommended_ai(state: State<'_, AppState>) -> Result<AppSettings>
     tauri::async_runtime::spawn_blocking(move || ai::install(&install_target))
         .await
         .map_err(|error| {
-            LedgerlyError::InvalidSettings(format!("AI setup task failed: {error}"))
+            WorthweaveError::InvalidSettings(format!("AI setup task failed: {error}"))
         })??;
     let input = SaveAiSettingsInput {
         runtime: Some(recommendation.runtime.into()),
@@ -105,13 +105,13 @@ async fn explain_portfolio(
     let (runtime, endpoint, model, analytics) = with_connection(&state, |connection| {
         let settings = db::settings(connection)?;
         let endpoint = settings.ai_endpoint.ok_or_else(|| {
-            LedgerlyError::LocalAi("local AI is not configured in Settings".into())
+            WorthweaveError::LocalAi("local AI is not configured in Settings".into())
         })?;
         let model = settings.ai_model.ok_or_else(|| {
-            LedgerlyError::LocalAi("local AI is not configured in Settings".into())
+            WorthweaveError::LocalAi("local AI is not configured in Settings".into())
         })?;
         let runtime = settings.ai_runtime.ok_or_else(|| {
-            LedgerlyError::LocalAi("local AI is not configured in Settings".into())
+            WorthweaveError::LocalAi("local AI is not configured in Settings".into())
         })?;
         let analytics = serde_json::json!({
             "valuation": market::valuation(connection)?,
@@ -251,7 +251,7 @@ pub fn run() {
             let data_dir = app
                 .path()
                 .app_local_data_dir()
-                .map_err(|_| LedgerlyError::DataDirectoryUnavailable)?;
+                .map_err(|_| WorthweaveError::DataDirectoryUnavailable)?;
             std::fs::create_dir_all(&data_dir)?;
             #[cfg(unix)]
             {

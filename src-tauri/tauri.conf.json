@@ -32,7 +32,8 @@
     "shortDescription": "Private portfolio intelligence",
     "longDescription": "A local-first investment portfolio for Trading 212 and Interactive Brokers.",
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
     }
   }
 }

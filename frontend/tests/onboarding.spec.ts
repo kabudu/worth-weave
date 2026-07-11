@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
       if (command === "skip_ai_setup") { settings = { ...settings, ai_onboarding_complete: true }; return settings; }
       if (emptyCommands.has(command)) return [];
       if (command === "portfolio_valuation") return { reporting_currency: "GBP", total_value: null, missing_price_count: 0, missing_fx_count: 0, stale_price_count: 0, stale_fx_count: 0, total_gain_loss: null, holdings: [] };
-      if (command === "portfolio_allocation") return { reporting_currency: "GBP", by_account: [], by_currency: [] };
+      if (command === "portfolio_allocation") return { reporting_currency: "GBP", by_account: [], by_currency: [], by_platform: [], by_asset_class: [], by_sector: [], by_geography: [] };
       return { reporting_currency: "GBP", account_count: 0, import_count: 0, data_status: "awaiting_imports" };
     };
     Object.assign(window, { __TAURI_INTERNALS__: { invoke } });

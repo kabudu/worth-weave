@@ -13,8 +13,8 @@ use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
     CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, Holding, ImportResult,
     IncomeSummary, PortfolioExplanation, PortfolioSnapshot, PortfolioSummary, PriceQuote,
-    ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput, UpdateSettingsInput,
-    ValuationSummary,
+    ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput,
+    UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Manager, State};
 
@@ -155,6 +155,16 @@ fn set_fx_rate(input: SetFxRateInput, state: State<'_, AppState>) -> Result<FxRa
 }
 
 #[tauri::command]
+fn update_instrument_metadata(
+    input: UpdateInstrumentMetadataInput,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    with_connection(&state, |connection| {
+        db::update_instrument_metadata(connection, &input)
+    })
+}
+
+#[tauri::command]
 fn portfolio_valuation(state: State<'_, AppState>) -> Result<ValuationSummary> {
     with_connection(&state, |connection| market::valuation(connection))
 }
@@ -253,6 +263,7 @@ pub fn run() {
             portfolio_reconciliation,
             set_market_price,
             set_fx_rate,
+            update_instrument_metadata,
             portfolio_valuation,
             capture_portfolio_snapshot,
             list_portfolio_snapshots,
@@ -366,6 +377,16 @@ mod tests {
         assert_eq!(holdings[0].cost_basis.as_deref(), Some("60"));
         assert_eq!(holdings[0].average_cost.as_deref(), Some("10"));
         assert_eq!(holdings[0].symbol.as_deref(), Some("TEST"));
+        db::update_instrument_metadata(
+            &connection,
+            &UpdateInstrumentMetadataInput {
+                instrument_id: "GB00TEST0001".into(),
+                asset_class: Some("Equity".into()),
+                sector: Some("Technology".into()),
+                geography: Some("United Kingdom".into()),
+            },
+        )
+        .expect("instrument metadata");
         assert_eq!(
             projections::reconciliation(&connection).expect("reconciliation")[0].status,
             "unavailable"
@@ -428,6 +449,10 @@ mod tests {
         let allocation = market::allocation(&connection).expect("allocation");
         assert_eq!(allocation.by_account[0].value, "96");
         assert_eq!(allocation.by_account[0].percentage, "100");
+        assert_eq!(allocation.by_platform[0].label, "trading_212");
+        assert_eq!(allocation.by_asset_class[0].label, "Equity");
+        assert_eq!(allocation.by_sector[0].label, "Technology");
+        assert_eq!(allocation.by_geography[0].label, "United Kingdom");
     }
 
     #[test]

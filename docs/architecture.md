@@ -41,6 +41,8 @@ Manual market prices and FX rates retain source and RFC 3339 timestamps. Prices 
 
 Local explanations use the OpenAI-compatible loopback endpoint of the configured runtime. Worthweave serializes only its deterministic valuation, allocation, reconciliation, income, and snapshot outputs. Requests reject non-loopback endpoints, limit question length and response size, use low temperature, and instruct the model not to calculate, predict, invent missing values, or provide personalised financial advice. Model text is never persisted into the ledger.
 
+Allocation is calculated from the same complete reporting-currency valuation by platform, account, asset class, sector, geography, and source currency. IBKR asset classes are imported where supplied; missing classifications remain visibly `Unclassified` until the user adds local metadata. Metadata edits affect grouping only and never alter broker events or financial values.
+
 ## Valuation provenance
 
 Market prices and FX rates are stored as exact coefficients and scales with their observation time and source. Manual entries are explicitly labelled `manual`. Direct and inverse FX pairs are supported. Consolidated portfolio value is returned only when every open holding has a price and every required reporting-currency conversion is available; missing inputs are counted and surfaced rather than treated as zero.

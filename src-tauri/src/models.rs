@@ -120,6 +120,9 @@ pub struct Holding {
     pub instrument_id: String,
     pub symbol: Option<String>,
     pub name: Option<String>,
+    pub asset_class: Option<String>,
+    pub sector: Option<String>,
+    pub geography: Option<String>,
     pub quantity: String,
     pub cost_basis: Option<String>,
     pub average_cost: Option<String>,
@@ -147,6 +150,14 @@ pub struct SetFxRateInput {
     pub base_currency: String,
     pub quote_currency: String,
     pub rate: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateInstrumentMetadataInput {
+    pub instrument_id: String,
+    pub asset_class: Option<String>,
+    pub sector: Option<String>,
+    pub geography: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -211,6 +222,10 @@ pub struct AllocationReport {
     pub reporting_currency: String,
     pub by_account: Vec<AllocationSlice>,
     pub by_currency: Vec<AllocationSlice>,
+    pub by_platform: Vec<AllocationSlice>,
+    pub by_asset_class: Vec<AllocationSlice>,
+    pub by_sector: Vec<AllocationSlice>,
+    pub by_geography: Vec<AllocationSlice>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

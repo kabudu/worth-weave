@@ -51,13 +51,17 @@ struct Position {
     basis_complete: bool,
     symbol: Option<String>,
     name: Option<String>,
+    asset_class: Option<String>,
+    sector: Option<String>,
+    geography: Option<String>,
 }
 
 pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
     let mut statement = connection.prepare(
         "SELECT e.account_id, a.display_name, a.broker, e.instrument_id, e.event_type,
                 e.amount_coefficient, e.amount_scale, e.currency,
-                e.quantity_coefficient, e.quantity_scale, i.symbol, i.name
+                e.quantity_coefficient, e.quantity_scale, i.symbol, i.name,
+                i.asset_class, i.sector, i.geography
          FROM events e JOIN accounts a ON a.id = e.account_id
          LEFT JOIN instruments i ON i.id=e.instrument_id
          WHERE e.instrument_id IS NOT NULL AND e.event_type IN ('buy', 'sell')
@@ -76,6 +80,9 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
         let currency: Option<String> = row.get(7)?;
         let symbol: Option<String> = row.get(10)?;
         let name: Option<String> = row.get(11)?;
+        let asset_class: Option<String> = row.get(12)?;
+        let sector: Option<String> = row.get(13)?;
+        let geography: Option<String> = row.get(14)?;
         if quantity.is_zero() {
             continue;
         }
@@ -92,6 +99,9 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 basis_complete: true,
                 symbol,
                 name,
+                asset_class,
+                sector,
+                geography,
                 ..Position::default()
             });
         if event_type == "buy" {
@@ -130,6 +140,9 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 instrument_id,
                 symbol: position.symbol,
                 name: position.name,
+                asset_class: position.asset_class,
+                sector: position.sector,
+                geography: position.geography,
                 quantity: position.quantity.normalize().to_string(),
                 cost_basis: (position.basis_complete && position.currency.is_some())
                     .then(|| position.cost_basis.normalize().to_string()),

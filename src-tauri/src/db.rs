@@ -143,6 +143,9 @@ pub fn open(path: &Path) -> Result<Connection> {
            symbol TEXT,
            name TEXT,
            isin TEXT,
+           asset_class TEXT,
+           sector TEXT,
+           geography TEXT,
            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
          CREATE TABLE IF NOT EXISTS events (
@@ -219,6 +222,25 @@ pub fn open(path: &Path) -> Result<Connection> {
             ))?;
         }
     }
+    for (column, definition) in [
+        ("asset_class", "TEXT"),
+        ("sector", "TEXT"),
+        ("geography", "TEXT"),
+    ] {
+        let exists = {
+            let mut statement = connection.prepare("PRAGMA table_info(instruments)")?;
+            statement
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+                .iter()
+                .any(|name| name == column)
+        };
+        if !exists {
+            connection.execute_batch(&format!(
+                "ALTER TABLE instruments ADD COLUMN {column} {definition}"
+            ))?;
+        }
+    }
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
            version INTEGER PRIMARY KEY NOT NULL,
@@ -228,20 +250,56 @@ pub fn open(path: &Path) -> Result<Connection> {
          INSERT OR IGNORE INTO schema_migrations (version, name) VALUES
            (1, 'initial_local_ledger'),
            (2, 'adaptive_ai_settings'),
-           (3, 'broker_reconciliation_and_instruments');
-         PRAGMA user_version = 3;",
+           (3, 'broker_reconciliation_and_instruments'),
+           (4, 'instrument_classification');
+         PRAGMA user_version = 4;",
     )?;
     Ok(connection)
 }
 
 #[cfg(test)]
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 #[cfg(test)]
 pub fn schema_version(connection: &Connection) -> Result<i64> {
     connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(Into::into)
+}
+
+pub fn update_instrument_metadata(
+    connection: &Connection,
+    input: &crate::models::UpdateInstrumentMetadataInput,
+) -> Result<()> {
+    let clean = |value: &Option<String>| {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    };
+    let asset_class = clean(&input.asset_class);
+    let sector = clean(&input.sector);
+    let geography = clean(&input.geography);
+    if [asset_class.as_ref(), sector.as_ref(), geography.as_ref()]
+        .into_iter()
+        .flatten()
+        .any(|value| value.chars().count() > 80)
+    {
+        return Err(crate::error::LedgerlyError::InvalidSettings(
+            "instrument classification must be 80 characters or fewer".into(),
+        ));
+    }
+    let changed = connection.execute(
+        "UPDATE instruments SET asset_class=?2, sector=?3, geography=?4, updated_at=CURRENT_TIMESTAMP WHERE id=?1",
+        params![input.instrument_id, asset_class, sector, geography],
+    )?;
+    if changed == 0 {
+        return Err(crate::error::LedgerlyError::InvalidSettings(
+            "instrument does not exist".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn summary(connection: &Connection) -> Result<PortfolioSummary> {

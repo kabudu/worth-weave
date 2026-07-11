@@ -27,6 +27,7 @@ struct Event {
     instrument_id: Option<String>,
     symbol: Option<String>,
     name: Option<String>,
+    asset_class: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -50,6 +51,7 @@ struct PositionSnapshot {
     quantity: ExactValue,
     symbol: Option<String>,
     name: Option<String>,
+    asset_class: Option<String>,
 }
 
 fn parse_date(value: &str, context: &str) -> Result<(NaiveDate, String)> {
@@ -232,6 +234,7 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
             instrument_id,
             symbol,
             name,
+            asset_class: None,
         });
     }
     let start = dates
@@ -407,6 +410,10 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
                         .get("Description")
                         .filter(|value| !value.is_empty())
                         .cloned(),
+                    asset_class: row
+                        .get("AssetClass")
+                        .filter(|value| !value.is_empty())
+                        .cloned(),
                 });
             }
             continue;
@@ -465,6 +472,10 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
             symbol: row.get("Symbol").filter(|value| !value.is_empty()).cloned(),
             name: row
                 .get("Description")
+                .filter(|value| !value.is_empty())
+                .cloned(),
+            asset_class: row
+                .get("AssetClass")
                 .filter(|value| !value.is_empty())
                 .cloned(),
         });
@@ -545,28 +556,30 @@ pub fn import_csv(
     for event in &new_events {
         if let Some(instrument_id) = &event.instrument_id {
             transaction.execute(
-                "INSERT INTO instruments (id, symbol, name, isin) VALUES (?1, ?2, ?3, ?4)
+                "INSERT INTO instruments (id, symbol, name, isin, asset_class) VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(id) DO UPDATE SET
                    symbol=COALESCE(excluded.symbol, instruments.symbol),
                    name=COALESCE(excluded.name, instruments.name),
-                   isin=COALESCE(excluded.isin, instruments.isin), updated_at=CURRENT_TIMESTAMP",
-                params![instrument_id, event.symbol, event.name, instrument_id],
+                   isin=COALESCE(excluded.isin, instruments.isin),
+                   asset_class=COALESCE(excluded.asset_class, instruments.asset_class), updated_at=CURRENT_TIMESTAMP",
+                params![instrument_id, event.symbol, event.name, instrument_id, event.asset_class],
             )?;
         }
         transaction.execute("INSERT INTO events (id, account_id, import_batch_id, source_id, event_type, occurred_at, description, amount_coefficient, amount_scale, currency, quantity_coefficient, quantity_scale, instrument_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)", params![Uuid::new_v4().to_string(), account_id, batch_id, event.source_id, event.event_type, event.occurred_at, event.description, event.amount.as_ref().map(|value| &value.coefficient), event.amount.as_ref().map(|value| value.scale), event.currency, event.quantity.as_ref().map(|value| &value.coefficient), event.quantity.as_ref().map(|value| value.scale), event.instrument_id])?;
     }
     for position in &parsed.positions {
         transaction.execute(
-            "INSERT INTO instruments (id, symbol, name, isin) VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO instruments (id, symbol, name, isin, asset_class) VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(id) DO UPDATE SET
                symbol=COALESCE(excluded.symbol, instruments.symbol),
                name=COALESCE(excluded.name, instruments.name),
-               isin=COALESCE(excluded.isin, instruments.isin), updated_at=CURRENT_TIMESTAMP",
+               isin=COALESCE(excluded.isin, instruments.isin),
+               asset_class=COALESCE(excluded.asset_class, instruments.asset_class), updated_at=CURRENT_TIMESTAMP",
             params![
                 position.instrument_id,
                 position.symbol,
                 position.name,
-                position.instrument_id
+                position.instrument_id, position.asset_class
             ],
         )?;
         transaction.execute(

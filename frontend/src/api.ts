@@ -70,6 +70,7 @@ const activityEventSchema = z.object({
 const holdingSchema = z.object({
   account_id: z.string().uuid(), account_name: z.string(), broker: z.enum(["trading_212", "ibkr"]),
   instrument_id: z.string(), symbol: z.string().nullable(), name: z.string().nullable(),
+  asset_class: z.string().nullable(), sector: z.string().nullable(), geography: z.string().nullable(),
   quantity: exactString, cost_basis: exactString.nullable(),
   average_cost: exactString.nullable(), currency: z.string().nullable(), cost_basis_complete: z.boolean(),
 });
@@ -97,6 +98,10 @@ const allocationReportSchema = z.object({
   reporting_currency: z.string(),
   by_account: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
   by_currency: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
+  by_platform: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
+  by_asset_class: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
+  by_sector: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
+  by_geography: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
 });
 const reconciliationItemSchema = z.object({
   account_id: z.string().uuid(), account_name: z.string(), instrument_id: z.string(),
@@ -184,6 +189,10 @@ export async function setMarketPrice(input: { instrument_id: string; price: stri
 
 export async function setFxRate(input: { base_currency: string; quote_currency: string; rate: string }) {
   return invoke("set_fx_rate", { input });
+}
+
+export async function updateInstrumentMetadata(input: { instrument_id: string; asset_class: string; sector: string; geography: string }) {
+  await invoke("update_instrument_metadata", { input });
 }
 
 export async function getPortfolioSnapshots(signal?: AbortSignal): Promise<PortfolioSnapshot[]> {

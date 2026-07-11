@@ -326,10 +326,39 @@ pub fn allocation(connection: &Connection) -> Result<AllocationReport> {
     }
     let mut accounts: BTreeMap<String, Decimal> = BTreeMap::new();
     let mut currencies: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut platforms: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut asset_classes: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut sectors: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut geographies: BTreeMap<String, Decimal> = BTreeMap::new();
     for item in valuation.holdings {
         let value = Decimal::from_str(item.reporting_value.as_deref().unwrap_or("0"))
             .map_err(|_| LedgerlyError::InvalidMarketData("holding valuation is invalid".into()))?;
         *accounts.entry(item.holding.account_name).or_default() += value;
+        *platforms.entry(item.holding.broker.clone()).or_default() += value;
+        *asset_classes
+            .entry(
+                item.holding
+                    .asset_class
+                    .clone()
+                    .unwrap_or_else(|| "Unclassified".into()),
+            )
+            .or_default() += value;
+        *sectors
+            .entry(
+                item.holding
+                    .sector
+                    .clone()
+                    .unwrap_or_else(|| "Unclassified".into()),
+            )
+            .or_default() += value;
+        *geographies
+            .entry(
+                item.holding
+                    .geography
+                    .clone()
+                    .unwrap_or_else(|| "Unclassified".into()),
+            )
+            .or_default() += value;
         if let Some(price) = item.price {
             *currencies.entry(price.currency).or_default() += value;
         }
@@ -351,5 +380,9 @@ pub fn allocation(connection: &Connection) -> Result<AllocationReport> {
         reporting_currency: valuation.reporting_currency,
         by_account: slices(accounts),
         by_currency: slices(currencies),
+        by_platform: slices(platforms),
+        by_asset_class: slices(asset_classes),
+        by_sector: slices(sectors),
+        by_geography: slices(geographies),
     })
 }

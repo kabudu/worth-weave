@@ -50,7 +50,7 @@ Onboarding keeps setup short and reversible:
 3. Accept or skip the local AI recommendation generated for the Mac's hardware.
 4. Import broker CSV exports; Worthweave checks file hashes and transaction identifiers to prevent duplicates.
 
-Prices, exchange rates, and investment categories are configured after import, when Worthweave knows which holdings require them. All preferences can be revisited in Settings.
+Prices and investment categories are configured after import, when Worthweave knows which holdings require them. Worthweave refreshes official ECB reference exchange rates automatically and keeps manual rates available as overrides. All preferences can be revisited in Settings.
 
 ## Privacy and financial integrity
 

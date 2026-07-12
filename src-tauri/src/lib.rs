@@ -11,10 +11,10 @@ use db::AppState;
 use error::{Result, WorthweaveError};
 use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
-    CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, Holding, ImportResult,
-    IncomeSummary, PortfolioExplanation, PortfolioSnapshot, PortfolioSummary, PriceQuote,
-    ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput, TotalReturnAttribution,
-    UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
+    CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, FxRefreshResult, Holding,
+    ImportResult, IncomeSummary, PortfolioExplanation, PortfolioSnapshot, PortfolioSummary,
+    PriceQuote, ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput,
+    TotalReturnAttribution, UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Emitter, Manager, State};
 
@@ -156,6 +156,14 @@ fn set_market_price(input: SetPriceInput, state: State<'_, AppState>) -> Result<
 #[tauri::command]
 fn set_fx_rate(input: SetFxRateInput, state: State<'_, AppState>) -> Result<FxRate> {
     with_connection(&state, |connection| market::set_fx_rate(connection, &input))
+}
+
+#[tauri::command]
+async fn refresh_fx_rates(state: State<'_, AppState>) -> Result<FxRefreshResult> {
+    let reference = market::fetch_ecb_reference_rates().await?;
+    with_connection(&state, |connection| {
+        market::save_ecb_reference_rates(connection, &reference)
+    })
 }
 
 #[tauri::command]
@@ -320,6 +328,7 @@ pub fn run() {
             portfolio_reconciliation,
             set_market_price,
             set_fx_rate,
+            refresh_fx_rates,
             update_instrument_metadata,
             portfolio_valuation,
             portfolio_total_return,
@@ -648,6 +657,64 @@ mod tests {
         let reconciliation = projections::reconciliation(&connection).expect("reconciliation");
         assert_eq!(reconciliation[0].status, "mismatch");
         assert_eq!(reconciliation[0].difference.as_deref(), Some("-1"));
+    }
+
+    #[test]
+    fn trading212_splits_adjust_quantity_and_partial_values_are_explicit() {
+        let directory = tempdir().expect("temp directory");
+        let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        let account = db::create_account(
+            &connection,
+            &CreateAccountInput {
+                broker: "trading_212".into(),
+                jurisdiction: "GB".into(),
+                account_type: "stocks_and_shares_isa".into(),
+                display_name: "Trading 212 ISA".into(),
+            },
+        )
+        .expect("create account");
+        let export = directory.path().join("history.csv");
+        std::fs::write(
+            &export,
+            "Action,Time,ISIN,Ticker,ID,No. of shares,Total,Currency (Total)\n\
+             Market buy,2025-01-01 10:00:00,US00SPLIT001,SPLT,B1,1128,100.00,GBP\n\
+             Stock split close,2025-03-18 07:41:35,US00SPLIT001,SPLT,C1,1128,,GBP\n\
+             Stock split open,2025-03-18 07:41:35,US00SPLIT001,SPLT,O1,22.56,,GBP\n\
+             Market buy,2025-04-01 10:00:00,US00NOPRICE1,NOPR,B2,2,20.00,GBP\n",
+        )
+        .expect("write export");
+        imports::import_csv(
+            &mut connection,
+            &account.id,
+            &export,
+            "stocks_and_shares_isa",
+        )
+        .expect("import");
+        let holdings = projections::holdings(&connection).expect("holdings");
+        let split = holdings
+            .iter()
+            .find(|holding| holding.instrument_id == "US00SPLIT001")
+            .expect("split holding");
+        assert_eq!(split.quantity, "22.56");
+        assert_eq!(split.cost_basis.as_deref(), Some("100"));
+
+        market::set_price(
+            &connection,
+            &SetPriceInput {
+                instrument_id: "US00SPLIT001".into(),
+                price: "5".into(),
+                currency: "GBP".into(),
+            },
+        )
+        .expect("price");
+        let valuation = market::valuation(&connection).expect("partial valuation");
+        assert_eq!(valuation.total_value.as_deref(), Some("112.8"));
+        assert!(!valuation.valuation_complete);
+        assert_eq!(valuation.valued_holding_count, 1);
+        assert_eq!(valuation.missing_price_count, 1);
+        assert_eq!(valuation.missing_fx_count, 0);
+        assert!(market::capture_snapshot(&connection).is_err());
+        assert!(market::allocation(&connection).is_err());
     }
 
     #[test]

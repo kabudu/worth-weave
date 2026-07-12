@@ -1,4 +1,6 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -7,12 +9,19 @@ use rust_decimal::Decimal;
 use crate::db;
 use crate::error::{Result, WorthweaveError};
 use crate::models::{
-    AllocationReport, AllocationSlice, FxRate, PortfolioSnapshot, PriceQuote, SetFxRateInput,
-    SetPriceInput, TotalReturnAttribution, ValuationSummary, ValuedHolding,
+    AllocationReport, AllocationSlice, FxRate, FxRefreshResult, PortfolioSnapshot, PriceQuote,
+    SetFxRateInput, SetPriceInput, TotalReturnAttribution, ValuationSummary, ValuedHolding,
 };
 use crate::projections;
-use std::collections::BTreeMap;
 use uuid::Uuid;
+
+const ECB_DAILY_RATES_URL: &str = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
+const MAX_ECB_RESPONSE_BYTES: usize = 256 * 1024;
+
+pub(crate) struct EcbReferenceRates {
+    as_of: String,
+    rates_per_eur: BTreeMap<String, Decimal>,
+}
 
 fn parse_positive(value: &str, field: &str) -> Result<Decimal> {
     Decimal::from_str(value.trim())
@@ -115,6 +124,166 @@ pub fn set_fx_rate(connection: &Connection, input: &SetFxRateInput) -> Result<Fx
     })
 }
 
+fn parse_ecb_reference_rates(xml: &str) -> Result<EcbReferenceRates> {
+    let mut reader = quick_xml::Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+    let mut date = None;
+    let mut rates_per_eur = BTreeMap::from([("EUR".to_owned(), Decimal::ONE)]);
+    loop {
+        match reader.read_event() {
+            Ok(quick_xml::events::Event::Empty(element))
+            | Ok(quick_xml::events::Event::Start(element))
+                if element.name().as_ref().ends_with(b"Cube") =>
+            {
+                let mut currency = None;
+                let mut rate = None;
+                for attribute in element.attributes().with_checks(false) {
+                    let attribute = attribute.map_err(|_| {
+                        WorthweaveError::InvalidMarketData(
+                            "ECB exchange-rate response contains invalid XML attributes".into(),
+                        )
+                    })?;
+                    let value = attribute
+                        .decoded_and_normalized_value(
+                            quick_xml::XmlVersion::Explicit1_0,
+                            reader.decoder(),
+                        )
+                        .map_err(|_| {
+                            WorthweaveError::InvalidMarketData(
+                                "ECB exchange-rate response contains invalid text".into(),
+                            )
+                        })?
+                        .into_owned();
+                    match attribute.key.as_ref() {
+                        b"time" => date = Some(value),
+                        b"currency" => currency = Some(value),
+                        b"rate" => rate = Some(value),
+                        _ => {}
+                    }
+                }
+                if let (Some(currency), Some(rate)) = (currency, rate) {
+                    rates_per_eur.insert(currency, parse_positive(&rate, "ECB rate")?);
+                }
+            }
+            Ok(quick_xml::events::Event::Eof) => break,
+            Ok(_) => {}
+            Err(_) => {
+                return Err(WorthweaveError::InvalidMarketData(
+                    "ECB exchange-rate response is not valid XML".into(),
+                ));
+            }
+        }
+    }
+    let date = date.ok_or_else(|| {
+        WorthweaveError::InvalidMarketData(
+            "ECB exchange-rate response does not contain a publication date".into(),
+        )
+    })?;
+    if rates_per_eur.len() < 2 {
+        return Err(WorthweaveError::InvalidMarketData(
+            "ECB exchange-rate response does not contain reference rates".into(),
+        ));
+    }
+    Ok(EcbReferenceRates {
+        as_of: format!("{date}T16:00:00+00:00"),
+        rates_per_eur,
+    })
+}
+
+pub(crate) async fn fetch_ecb_reference_rates() -> Result<EcbReferenceRates> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| {
+            WorthweaveError::InvalidMarketData(format!(
+                "could not prepare the ECB exchange-rate request: {error}"
+            ))
+        })?;
+    let response = client
+        .get(ECB_DAILY_RATES_URL)
+        .header(reqwest::header::USER_AGENT, "Worthweave/0.1")
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|error| {
+            WorthweaveError::InvalidMarketData(format!(
+                "could not download ECB reference rates: {error}"
+            ))
+        })?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_ECB_RESPONSE_BYTES as u64)
+    {
+        return Err(WorthweaveError::InvalidMarketData(
+            "ECB exchange-rate response is unexpectedly large".into(),
+        ));
+    }
+    let bytes = response.bytes().await.map_err(|error| {
+        WorthweaveError::InvalidMarketData(format!("could not read ECB reference rates: {error}"))
+    })?;
+    if bytes.len() > MAX_ECB_RESPONSE_BYTES {
+        return Err(WorthweaveError::InvalidMarketData(
+            "ECB exchange-rate response is unexpectedly large".into(),
+        ));
+    }
+    let xml = std::str::from_utf8(&bytes).map_err(|_| {
+        WorthweaveError::InvalidMarketData("ECB exchange-rate response is not valid UTF-8".into())
+    })?;
+    parse_ecb_reference_rates(xml)
+}
+
+pub(crate) fn save_ecb_reference_rates(
+    connection: &Connection,
+    reference: &EcbReferenceRates,
+) -> Result<FxRefreshResult> {
+    let reporting_currency = db::settings(connection)?
+        .reporting_currency
+        .unwrap_or_else(|| "GBP".into());
+    let quote_per_eur = reference
+        .rates_per_eur
+        .get(&reporting_currency)
+        .ok_or_else(|| {
+            WorthweaveError::InvalidMarketData(format!(
+                "ECB does not publish a {reporting_currency} reference rate"
+            ))
+        })?;
+    let transaction = connection.unchecked_transaction()?;
+    let mut rates_saved = 0;
+    for currency in db::CURRENCIES {
+        if currency.code == reporting_currency {
+            continue;
+        }
+        let Some(base_per_eur) = reference.rates_per_eur.get(currency.code) else {
+            continue;
+        };
+        let rate = quote_per_eur / base_per_eur;
+        let (coefficient, scale) = parts(rate);
+        rates_saved += transaction.execute(
+            "INSERT INTO fx_rates (base_currency, quote_currency, rate_coefficient, rate_scale, as_of, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'ecb_reference')
+             ON CONFLICT(base_currency, quote_currency) DO UPDATE SET
+               rate_coefficient=excluded.rate_coefficient,
+               rate_scale=excluded.rate_scale,
+               as_of=excluded.as_of,
+               source=excluded.source
+             WHERE fx_rates.source='ecb_reference' AND excluded.as_of >= fx_rates.as_of",
+            params![
+                currency.code,
+                reporting_currency,
+                coefficient,
+                scale,
+                reference.as_of
+            ],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(FxRefreshResult {
+        as_of: reference.as_of.clone(),
+        rates_saved,
+        source: "European Central Bank",
+    })
+}
+
 fn price(connection: &Connection, instrument_id: &str) -> Result<Option<(PriceQuote, Decimal)>> {
     connection.query_row(
         "SELECT price_coefficient, price_scale, currency, as_of, source FROM market_prices WHERE instrument_id = ?1",
@@ -155,7 +324,8 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
         .unwrap_or_else(|| "GBP".into());
     let mut total = Decimal::ZERO;
     let mut missing_price_count = 0;
-    let mut missing_fx_count = 0;
+    let mut missing_fx_pairs = BTreeSet::new();
+    let mut valued_holding_count = 0;
     let mut stale_price_count = 0;
     let mut stale_fx_count = 0;
     let mut total_gain = Decimal::ZERO;
@@ -180,13 +350,14 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
                 }
                 let reporting_value = market_value * rate;
                 total += reporting_value;
+                valued_holding_count += 1;
                 (
                     Some(price_quote),
                     Some(market_value.normalize().to_string()),
                     Some(reporting_value.normalize().to_string()),
                 )
             } else {
-                missing_fx_count += 1;
+                missing_fx_pairs.insert((price_quote.currency.clone(), reporting_currency.clone()));
                 (
                     Some(price_quote),
                     Some(market_value.normalize().to_string()),
@@ -241,11 +412,14 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
             gain_loss,
         });
     }
-    let total_value =
-        (missing_price_count == 0 && missing_fx_count == 0).then(|| total.normalize().to_string());
+    let missing_fx_count = missing_fx_pairs.len();
+    let valuation_complete = missing_price_count == 0 && missing_fx_count == 0;
+    let total_value = (valued_holding_count > 0).then(|| total.normalize().to_string());
     Ok(ValuationSummary {
         reporting_currency,
         total_value,
+        valuation_complete,
+        valued_holding_count,
         missing_price_count,
         missing_fx_count,
         stale_price_count,
@@ -466,6 +640,12 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
 
 pub fn capture_snapshot(connection: &Connection) -> Result<PortfolioSnapshot> {
     let valuation = valuation(connection)?;
+    if !valuation.valuation_complete {
+        return Err(WorthweaveError::InvalidMarketData(
+            "add current prices and exchange rates for every investment before saving today’s value"
+                .into(),
+        ));
+    }
     let total = valuation.total_value.ok_or_else(|| {
         WorthweaveError::InvalidMarketData(
             "add current prices and exchange rates for every investment before saving today’s value".into(),
@@ -517,6 +697,11 @@ pub fn snapshots(connection: &Connection) -> Result<Vec<PortfolioSnapshot>> {
 
 pub fn allocation(connection: &Connection) -> Result<AllocationReport> {
     let valuation = valuation(connection)?;
+    if !valuation.valuation_complete {
+        return Err(WorthweaveError::InvalidMarketData(
+            "allocation requires a complete portfolio valuation".into(),
+        ));
+    }
     let total = valuation
         .total_value
         .as_deref()
@@ -598,4 +783,54 @@ pub fn allocation(connection: &Connection) -> Result<AllocationReport> {
         by_sector: slices(sectors),
         by_geography: slices(geographies),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ECB_FIXTURE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+      <gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01" xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
+        <Cube><Cube time="2026-07-10"><Cube currency="USD" rate="1.1430"/><Cube currency="GBP" rate="0.85155"/></Cube></Cube>
+      </gesmes:Envelope>"#;
+
+    #[test]
+    fn ecb_reference_rates_are_crossed_exactly_and_do_not_replace_manual_overrides() {
+        let reference = parse_ecb_reference_rates(ECB_FIXTURE).expect("ECB fixture");
+        assert_eq!(reference.as_of, "2026-07-10T16:00:00+00:00");
+        assert_eq!(
+            reference.rates_per_eur.get("USD"),
+            Some(&Decimal::from_str("1.1430").expect("USD rate"))
+        );
+
+        let directory = tempfile::tempdir().expect("temp directory");
+        let connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        let first = save_ecb_reference_rates(&connection, &reference).expect("save ECB rates");
+        assert_eq!(first.rates_saved, 2);
+        let expected = Decimal::from_str("0.85155").expect("GBP rate")
+            / Decimal::from_str("1.1430").expect("USD rate");
+        assert_eq!(
+            fx(&connection, "USD", "GBP")
+                .expect("stored FX")
+                .map(|(rate, _)| rate),
+            Some(expected)
+        );
+
+        set_fx_rate(
+            &connection,
+            &SetFxRateInput {
+                base_currency: "USD".into(),
+                quote_currency: "GBP".into(),
+                rate: "0.75".into(),
+            },
+        )
+        .expect("manual override");
+        save_ecb_reference_rates(&connection, &reference).expect("refresh ECB rates");
+        assert_eq!(
+            fx(&connection, "USD", "GBP")
+                .expect("manual FX")
+                .map(|(rate, _)| rate),
+            Some(Decimal::from_str("0.75").expect("manual rate"))
+        );
+    }
 }

@@ -182,6 +182,13 @@ pub struct FxRate {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct FxRefreshResult {
+    pub as_of: String,
+    pub rates_saved: usize,
+    pub source: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ValuedHolding {
     pub holding: Holding,
     pub price: Option<PriceQuote>,
@@ -196,6 +203,8 @@ pub struct ValuedHolding {
 pub struct ValuationSummary {
     pub reporting_currency: String,
     pub total_value: Option<String>,
+    pub valuation_complete: bool,
+    pub valued_holding_count: usize,
     pub missing_price_count: usize,
     pub missing_fx_count: usize,
     pub stale_price_count: usize,

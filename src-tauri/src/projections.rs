@@ -61,10 +61,10 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
         "SELECT e.account_id, a.display_name, a.broker, e.instrument_id, e.event_type,
                 e.amount_coefficient, e.amount_scale, e.currency,
                 e.quantity_coefficient, e.quantity_scale, i.symbol, i.name,
-                i.asset_class, i.sector, i.geography
+                i.asset_class, i.sector, i.geography, e.description
          FROM events e JOIN accounts a ON a.id = e.account_id
          LEFT JOIN instruments i ON i.id=e.instrument_id
-         WHERE e.instrument_id IS NOT NULL AND e.event_type IN ('buy', 'sell')
+         WHERE e.instrument_id IS NOT NULL AND e.event_type IN ('buy', 'sell', 'corporate_action')
          ORDER BY e.occurred_at, e.id",
     )?;
     let mut rows = statement.query([])?;
@@ -83,6 +83,7 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
         let asset_class: Option<String> = row.get(12)?;
         let sector: Option<String> = row.get(13)?;
         let geography: Option<String> = row.get(14)?;
+        let description: String = row.get(15)?;
         if quantity.is_zero() {
             continue;
         }
@@ -104,7 +105,19 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 geography,
                 ..Position::default()
             });
-        if event_type == "buy" {
+        if event_type == "corporate_action" {
+            let description = description.to_lowercase();
+            if description.contains("stock split open") {
+                position.quantity += quantity;
+            } else if description.contains("stock split close") {
+                if quantity > position.quantity {
+                    position.basis_complete = false;
+                }
+                position.quantity -= quantity;
+            } else {
+                position.basis_complete = false;
+            }
+        } else if event_type == "buy" {
             position.quantity += quantity;
             position.cost_basis += amount;
         } else {

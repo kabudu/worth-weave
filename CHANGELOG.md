@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Reworked onboarding, imports, portfolio reports, settings, and private AI guidance to use clear, task-focused language instead of internal technical terms.
 - Use latest IBKR position snapshots for current quantities, repair repeated imports without duplicating events, link symbol-only IBKR trades, and distinguish incomplete history from current-position errors.
+- Apply exact Trading 212 stock-split rows, refresh official ECB reference exchange rates automatically, count missing currency pairs accurately, and show explicitly partial portfolio values without permitting incomplete snapshots.
 
 ### Security
 

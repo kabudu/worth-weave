@@ -1,10 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 
-import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution } from "./api";
+import { getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution, refreshFxRates } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
@@ -45,6 +45,7 @@ function StatusOrb({ accounts, imports, valued }: { accounts: number; imports: n
 }
 
 export function App() {
+  const queryClient = useQueryClient();
   const [activeView, setActiveView] = useState("Overview");
   const [importOpen, setImportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -72,6 +73,19 @@ export function App() {
   const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal), enabled: ready && activeView === "Activity" });
   const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal), enabled: ready && activeView === "Income" });
   const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal), enabled: ready && (activeView === "Overview" || activeView === "Portfolio") });
+  const fxRefresh = useMutation({
+    mutationFn: refreshFxRates,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["valuation"] }),
+        queryClient.invalidateQueries({ queryKey: ["allocation"] }),
+        queryClient.invalidateQueries({ queryKey: ["total-return"] }),
+      ]);
+    },
+  });
+  useEffect(() => {
+    if ((valuation.data?.missing_fx_count || valuation.data?.stale_fx_count) && fxRefresh.isIdle) fxRefresh.mutate();
+  }, [valuation.data?.missing_fx_count, valuation.data?.stale_fx_count, fxRefresh]);
   const attribution = useQuery({ queryKey: ["total-return"], queryFn: ({ signal }) => getTotalReturnAttribution(signal), enabled: ready && activeView === "Portfolio" });
   const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal), enabled: ready && activeView === "Portfolio" });
   const allocation = useQuery({ queryKey: ["allocation"], queryFn: ({ signal }) => getPortfolioAllocation(signal), retry: false, enabled: ready && activeView === "Portfolio" });
@@ -145,7 +159,7 @@ export function App() {
               explained in plain English.
             </p>
           </div>
-          <StatusOrb accounts={accountCount} imports={importCount} valued={Boolean(valuation.data?.total_value)} />
+          <StatusOrb accounts={accountCount} imports={importCount} valued={Boolean(valuation.data?.valuation_complete)} />
         </section>
 
         {summary.isError && (
@@ -157,9 +171,9 @@ export function App() {
 
         <section className="metric-grid" aria-label="Portfolio readiness">
           <article className="metric-card featured">
-            <div className="metric-heading"><span>Total portfolio</span><span className="status-chip">{valuation.data?.total_value ? "Valued" : importCount > 0 ? "Needs market data" : "Awaiting data"}</span></div>
+            <div className="metric-heading"><span>{valuation.data?.valuation_complete ? "Total portfolio" : "Valued so far"}</span><span className="status-chip">{valuation.data?.valuation_complete ? "Valued" : valuation.data?.total_value ? "Partial" : importCount > 0 ? "Needs market data" : "Awaiting data"}</span></div>
             <strong className="metric-value">{valuation.data?.total_value ? new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_value)) : "—"}</strong>
-            <p>{valuation.data?.total_value ? `${valuation.data.total_gain_loss ? `${new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_gain_loss))} total gain/loss · ` : ""}${valuation.data.stale_price_count + valuation.data.stale_fx_count} prices or exchange rates need updating` : "Add current prices and exchange rates to calculate your total."}</p>
+            <p>{valuation.data?.valuation_complete ? `${valuation.data.total_gain_loss ? `${new Intl.NumberFormat(undefined, { style: "currency", currency: reportingCurrency }).format(Number(valuation.data.total_gain_loss))} total gain/loss · ` : ""}${valuation.data.stale_price_count + valuation.data.stale_fx_count} prices or exchange rates need updating` : valuation.data?.total_value ? `${valuation.data.valued_holding_count} holdings valued · ${valuation.data.missing_price_count} still need prices` : fxRefresh.isPending ? "Refreshing reference exchange rates…" : "Add current prices to calculate your portfolio value."}</p>
           </article>
           <article className="metric-card">
             <div className="metric-icon violet">◈</div>

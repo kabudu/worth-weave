@@ -37,7 +37,7 @@ The second onboarding step inspects only coarse local hardware characteristics n
 
 IBKR open-position sections are persisted as immutable, account-scoped broker snapshots. Reconciliation compares the latest snapshot per account with quantities reconstructed from canonical events and reports matched, mismatched, or unavailable for every instrument. Trading 212 transaction exports without positions remain explicitly unavailable. Broker symbols and descriptions populate a local instrument registry keyed by the stable ISIN or broker contract identifier.
 
-Manual market prices and FX rates retain source and RFC 3339 timestamps. Prices older than 36 hours and FX rates older than 48 hours are surfaced as stale without silently discarding the last known deterministic valuation. Gain/loss is computed only when both cost basis and required currency conversion are complete; otherwise it remains unavailable.
+Manual market prices and FX rates retain source and RFC 3339 timestamps. The native backend fetches the ECB's bounded HTTPS daily reference-rate XML feed, derives supported cross-rates through EUR using exact decimals, and stores the publication date and `ecb_reference` source. Manual rates take precedence over automatic refreshes. Prices older than 36 hours and FX rates older than 48 hours are surfaced as stale without silently discarding the last known deterministic valuation. Gain/loss is computed only when both cost basis and required currency conversion are complete; otherwise it remains unavailable.
 
 True total-return attribution replays imported trades using average-cost performance lots and separates realised gains, unrealised gains, dividends, interest, fees, and taxes. Deposits and withdrawals are external cash flows and never appear as investment return. Coverage dates and calculation notes are always returned. Missing history, prices, exchange rates, corporate-action basis adjustments, in-kind transfers, or unclassified cash events keep the report partial. Foreign components may be translated at the latest available rate for an attributed subtotal, but consolidated total return and FX impact remain unavailable until transaction-date FX rates exist.
 
@@ -53,7 +53,7 @@ Manrope Variable and Inter Variable are bundled as local WOFF2 assets. Manrope p
 
 ## Valuation provenance
 
-Market prices and FX rates are stored as exact coefficients and scales with their observation time and source. Manual entries are explicitly labelled `manual`. Direct and inverse FX pairs are supported. Consolidated portfolio value is returned only when every open holding has a price and every required reporting-currency conversion is available; missing inputs are counted and surfaced rather than treated as zero.
+Market prices and FX rates are stored as exact coefficients and scales with their observation time and source. Manual entries are explicitly labelled `manual`; automatic reference rates are labelled `ecb_reference`. Direct and inverse FX pairs are supported. The UI may show an explicitly labelled “Valued so far” subtotal for holdings with complete market inputs, while a portfolio snapshot and complete total remain unavailable until every open holding has a price and every required reporting-currency conversion is available. Missing inputs are counted and never treated as zero.
 
 The frontend currently uses TypeScript 6.0 because the stable `typescript-eslint` parser does not yet declare TypeScript 7 support. This should be revisited when its supported range advances.
 

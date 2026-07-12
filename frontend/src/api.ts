@@ -83,6 +83,7 @@ const priceQuoteSchema = z.object({
 });
 const valuationSummarySchema = z.object({
   reporting_currency: z.string(), total_value: exactString.nullable(),
+  valuation_complete: z.boolean(), valued_holding_count: z.number().int().nonnegative(),
   missing_price_count: z.number().int().nonnegative(), missing_fx_count: z.number().int().nonnegative(),
   stale_price_count: z.number().int().nonnegative(), stale_fx_count: z.number().int().nonnegative(),
   total_gain_loss: exactString.nullable(),
@@ -223,6 +224,14 @@ export async function setMarketPrice(input: { instrument_id: string; price: stri
 
 export async function setFxRate(input: { base_currency: string; quote_currency: string; rate: string }) {
   return invoke("set_fx_rate", { input });
+}
+
+const fxRefreshResultSchema = z.object({
+  as_of: z.string(), rates_saved: z.number().int().nonnegative(), source: z.string(),
+});
+
+export async function refreshFxRates() {
+  return fxRefreshResultSchema.parse(await invoke("refresh_fx_rates"));
 }
 
 export async function updateInstrumentMetadata(input: { instrument_id: string; asset_class: string; sector: string; geography: string }) {

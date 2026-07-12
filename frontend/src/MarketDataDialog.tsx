@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { getMassiveProviderStatus, refreshFxRates, refreshMassivePrices, removeMassiveApiKey, saveMassiveApiKey, setFxRate, setMarketPrice, updateInstrumentMetadata, type CurrencyOption, type Holding } from "./api";
+import { SearchSelect } from "./SearchSelect";
 
 type Props = { open: boolean; onClose: () => void; holdings: Holding[]; currencies: CurrencyOption[]; reportingCurrency: string };
 
@@ -36,7 +37,8 @@ export function MarketDataDialog({ open, onClose, holdings, currencies, reportin
   function submitFx(event: FormEvent) { event.preventDefault(); fxMutation.mutate({ base_currency: fxBase, quote_currency: reportingCurrency, rate }); }
   function submitMetadata(event: FormEvent) { event.preventDefault(); metadataMutation.mutate({ instrument_id: effectiveInstrument, asset_class: effectiveAssetClass, sector: effectiveSector, geography: effectiveGeography }); }
   function selectInstrument(value: string) { setInstrument(value); setAssetClass(null); setSector(null); setGeography(null); }
-  const instrumentSelect = <label>Investment<select value={effectiveInstrument} onChange={(event) => selectInstrument(event.target.value)}>{holdings.map((holding) => <option key={`${holding.account_id}-${holding.instrument_id}`} value={holding.instrument_id}>{holding.symbol ?? holding.instrument_id} · {holding.account_name}</option>)}</select></label>;
+  const instrumentOptions = holdings.map((holding) => ({ value: holding.instrument_id, label: holding.symbol ?? holding.instrument_id, detail: holding.account_name }));
+  const instrumentSelect = <label>Investment<SearchSelect ariaLabel="Search investments" value={effectiveInstrument} options={instrumentOptions} onChange={selectInstrument} placeholder="Search by symbol or account" /></label>;
   return <dialog ref={dialogRef} className="market-dialog" onClose={onClose}>
     <div className="dialog-topline"><div><span className="section-kicker">Update your figures</span><h2>Prices, exchange rates &amp; categories</h2></div><button type="button" className="dialog-close" onClick={onClose} aria-label="Close market data">×</button></div>
     <section className="market-provider"><h3>Automatic US stock prices</h3><p>Optional Massive integration. Your API key is stored in macOS Keychain. Worthweave sends unresolved ticker symbols to Massive only when you click refresh; Stocks Starter quotes are 15-minute delayed.</p>

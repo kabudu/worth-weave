@@ -220,7 +220,7 @@ async fn fetch_massive_candidate(
         return Ok(MassiveObservation::Unsupported(candidate.symbol));
     }
     let url = format!("{MASSIVE_API_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}");
-    let snapshot = massive_json(&client, &key, url).await?;
+    let snapshot = massive_json(client, key, url).await?;
     let ticker = snapshot.as_ref().and_then(|v| v.get("ticker"));
     if let Some(price) = massive_snapshot_price(ticker) {
         let millis = ticker
@@ -245,8 +245,8 @@ async fn fetch_massive_candidate(
         });
     }
     let reference = massive_json(
-        &client,
-        &key,
+        client,
+        key,
         format!("{MASSIVE_API_BASE}/v3/reference/tickers?ticker={symbol}&active=false&limit=10"),
     )
     .await?;

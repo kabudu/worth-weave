@@ -203,6 +203,7 @@ pub struct MassiveRefreshResult {
     pub requested: usize,
     pub prices_saved: usize,
     pub delisted: Vec<String>,
+    pub foreign_inactive_matches: Vec<String>,
     pub not_found: Vec<String>,
     pub unsupported: Vec<String>,
     pub failed: Vec<String>,

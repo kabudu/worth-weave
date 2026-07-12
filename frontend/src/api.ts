@@ -237,7 +237,7 @@ export async function refreshFxRates() {
 const massiveProviderStatusSchema = z.object({ configured: z.boolean() });
 const massiveRefreshResultSchema = z.object({
   requested: z.number().int().nonnegative(), prices_saved: z.number().int().nonnegative(),
-  delisted: z.array(z.string()), not_found: z.array(z.string()), unsupported: z.array(z.string()),
+  delisted: z.array(z.string()), foreign_inactive_matches: z.array(z.string()), not_found: z.array(z.string()), unsupported: z.array(z.string()),
   failed: z.array(z.string()),
 });
 export type MassiveRefreshResult = z.infer<typeof massiveRefreshResultSchema>;

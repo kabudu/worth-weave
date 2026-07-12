@@ -37,6 +37,7 @@ pub(crate) enum MassiveObservation {
         as_of: String,
     },
     Delisted(String),
+    ForeignInactiveMatch(String),
     NotFound(String),
     Unsupported(String),
     Failed(String),
@@ -259,8 +260,10 @@ async fn fetch_massive_candidate(
                     .is_some_and(|t| t.eq_ignore_ascii_case(&symbol))
             })
         });
-    Ok(if delisted {
+    Ok(if delisted && candidate.instrument_id.starts_with("US") {
         MassiveObservation::Delisted(symbol)
+    } else if delisted {
+        MassiveObservation::ForeignInactiveMatch(symbol)
     } else {
         MassiveObservation::NotFound(symbol)
     })
@@ -272,8 +275,14 @@ pub fn save_massive_prices(
 ) -> Result<crate::models::MassiveRefreshResult> {
     let requested = observations.len();
     let transaction = connection.unchecked_transaction()?;
-    let (mut prices_saved, mut delisted, mut not_found, mut unsupported, mut failed) =
-        (0, vec![], vec![], vec![], vec![]);
+    let (
+        mut prices_saved,
+        mut delisted,
+        mut foreign_inactive_matches,
+        mut not_found,
+        mut unsupported,
+        mut failed,
+    ) = (0, vec![], vec![], vec![], vec![], vec![]);
     for observation in observations {
         match observation {
             MassiveObservation::Price {
@@ -290,6 +299,7 @@ pub fn save_massive_prices(
                     params![candidate.instrument_id, coefficient, scale, as_of])?;
             }
             MassiveObservation::Delisted(s) => delisted.push(s),
+            MassiveObservation::ForeignInactiveMatch(s) => foreign_inactive_matches.push(s),
             MassiveObservation::NotFound(s) => not_found.push(s),
             MassiveObservation::Unsupported(s) => unsupported.push(s),
             MassiveObservation::Failed(s) => failed.push(s),
@@ -300,6 +310,7 @@ pub fn save_massive_prices(
         requested,
         prices_saved,
         delisted,
+        foreign_inactive_matches,
         not_found,
         unsupported,
         failed,
@@ -1088,6 +1099,13 @@ mod tests {
         });
         let price = massive_snapshot_price(response.get("ticker")).expect("previous close");
         assert_eq!(price.to_string(), "315.32");
+    }
+
+    #[test]
+    fn only_us_isins_can_be_classified_as_delisted_by_massive() {
+        assert!("US0378331005".starts_with("US"));
+        assert!(!"GB00B24CGK77".starts_with("US"));
+        assert!(!"VGG7223M1005".starts_with("US"));
     }
 
     const ECB_FIXTURE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>

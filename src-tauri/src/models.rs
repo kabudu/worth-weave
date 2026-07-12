@@ -112,6 +112,8 @@ pub struct ActivityEvent {
     pub currency: Option<String>,
     pub quantity: Option<String>,
     pub instrument_id: Option<String>,
+    pub symbol: Option<String>,
+    pub instrument_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -67,6 +67,7 @@ const activityEventSchema = z.object({
   broker: z.enum(["trading_212", "ibkr", "robinhood"]), event_type: z.string(), occurred_at: z.string(),
   description: z.string(), amount: exactString.nullable(), currency: z.string().nullable(),
   quantity: exactString.nullable(), instrument_id: z.string().nullable(),
+  symbol: z.string().nullable(), instrument_name: z.string().nullable(),
 });
 const holdingSchema = z.object({
   account_id: z.string().uuid(), account_name: z.string(), broker: z.enum(["trading_212", "ibkr", "robinhood"]),

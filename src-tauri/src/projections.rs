@@ -16,8 +16,9 @@ pub fn activity(connection: &Connection, limit: u32) -> Result<Vec<ActivityEvent
     let mut statement = connection.prepare(
         "SELECT e.id, e.account_id, a.display_name, a.broker, e.event_type, e.occurred_at,
                 e.description, e.amount_coefficient, e.amount_scale, e.currency,
-                e.quantity_coefficient, e.quantity_scale, e.instrument_id
+                e.quantity_coefficient, e.quantity_scale, e.instrument_id, i.symbol, i.name
          FROM events e JOIN accounts a ON a.id = e.account_id
+         LEFT JOIN instruments i ON i.id = e.instrument_id
          ORDER BY e.occurred_at DESC, e.id DESC LIMIT ?1",
     )?;
     let rows = statement.query_map([limit], |row| {
@@ -35,6 +36,8 @@ pub fn activity(connection: &Connection, limit: u32) -> Result<Vec<ActivityEvent
             currency: row.get(9)?,
             quantity,
             instrument_id: row.get(12)?,
+            symbol: row.get(13)?,
+            instrument_name: row.get(14)?,
         })
     })?;
     rows.collect::<std::result::Result<_, _>>()

@@ -54,6 +54,8 @@ struct PositionSnapshot {
     symbol: Option<String>,
     name: Option<String>,
     asset_class: Option<String>,
+    market_price: Option<ExactValue>,
+    price_currency: Option<String>,
 }
 
 fn parse_date(value: &str, context: &str) -> Result<(NaiveDate, String)> {
@@ -343,6 +345,21 @@ fn ibkr_type(section: &str, row: &HashMap<String, String>) -> &'static str {
     }
 }
 
+fn ibkr_explicit_instrument_id(row: &HashMap<String, String>) -> Option<String> {
+    row.get("ISIN")
+        .or_else(|| row.get("Conid"))
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn ibkr_symbol(row: &HashMap<String, String>) -> Option<String> {
+    row.get("Symbol")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_uppercase())
+}
+
 fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
     let text = std::str::from_utf8(content)
         .map_err(|_| WorthweaveError::Csv("IBKR export must be UTF-8 CSV".into()))?
@@ -399,10 +416,9 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
             {
                 continue;
             }
-            let Some(instrument_id) = row
-                .get("ISIN")
-                .or_else(|| row.get("Conid"))
-                .filter(|value| !value.trim().is_empty())
+            let symbol = ibkr_symbol(&row);
+            let Some(instrument_id) = ibkr_explicit_instrument_id(&row)
+                .or_else(|| symbol.as_ref().map(|value| format!("symbol:{value}")))
             else {
                 continue;
             };
@@ -417,9 +433,9 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
             )? {
                 positions.push(PositionSnapshot {
                     report_date,
-                    instrument_id: instrument_id.clone(),
+                    instrument_id,
                     quantity: exact_value(quantity, None),
-                    symbol: row.get("Symbol").filter(|value| !value.is_empty()).cloned(),
+                    symbol,
                     name: row
                         .get("Description")
                         .filter(|value| !value.is_empty())
@@ -428,6 +444,15 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
                         .get("AssetClass")
                         .filter(|value| !value.is_empty())
                         .cloned(),
+                    market_price: decimal(
+                        row.get("MarkPrice").map(String::as_str),
+                        &format!("MarkPrice at row {}", offset + 1),
+                    )?
+                    .map(|value| exact_value(value, None)),
+                    price_currency: row
+                        .get("CurrencyPrimary")
+                        .map(|value| value.trim().to_uppercase())
+                        .filter(|value| !value.is_empty()),
                 });
             }
             continue;
@@ -485,12 +510,8 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
             amount,
             currency,
             quantity,
-            instrument_id: row
-                .get("ISIN")
-                .or_else(|| row.get("Conid"))
-                .filter(|value| !value.is_empty())
-                .cloned(),
-            symbol: row.get("Symbol").filter(|value| !value.is_empty()).cloned(),
+            instrument_id: ibkr_explicit_instrument_id(&row),
+            symbol: ibkr_symbol(&row),
             name: row
                 .get("Description")
                 .filter(|value| !value.is_empty())
@@ -501,6 +522,30 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
                 .cloned(),
         });
     }
+    let mut instrument_by_symbol = HashMap::new();
+    for position in &positions {
+        if let Some(symbol) = &position.symbol {
+            instrument_by_symbol.insert(symbol.clone(), position.instrument_id.clone());
+        }
+    }
+    for event in &events {
+        if let (Some(symbol), Some(instrument_id)) = (&event.symbol, &event.instrument_id) {
+            instrument_by_symbol
+                .entry(symbol.clone())
+                .or_insert_with(|| instrument_id.clone());
+        }
+    }
+    for event in &mut events {
+        if event.instrument_id.is_none() {
+            event.instrument_id = event.symbol.as_ref().map(|symbol| {
+                instrument_by_symbol
+                    .get(symbol)
+                    .cloned()
+                    .unwrap_or_else(|| format!("symbol:{symbol}"))
+            });
+        }
+    }
+
     let start =
         dates.iter().min().copied().ok_or_else(|| {
             WorthweaveError::Csv("IBKR export contains no dated data rows".into())
@@ -549,16 +594,6 @@ pub fn import_csv(
         return Err(WorthweaveError::ImportTooLarge);
     }
     let digest = hex(&Sha256::digest(&content));
-    let duplicate: Option<String> = connection
-        .query_row(
-            "SELECT id FROM import_batches WHERE account_id = ?1 AND content_sha256 = ?2",
-            params![account_id, digest],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if duplicate.is_some() {
-        return Err(WorthweaveError::DuplicateImport);
-    }
     let parsed = match broker.as_str() {
         "trading_212" => parse_trading212(&content)?,
         "ibkr" => parse_ibkr(&content)?,
@@ -590,10 +625,20 @@ pub fn import_csv(
             "import contains an oversized instrument identifier".into(),
         ));
     }
+    let existing_batch: Option<String> = connection
+        .query_row(
+            "SELECT id FROM import_batches WHERE account_id = ?1 AND content_sha256 = ?2",
+            params![account_id, digest],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let repairing = existing_batch.is_some();
     let new_events = parsed.events;
-    let batch_id = Uuid::new_v4().to_string();
+    let batch_id = existing_batch.unwrap_or_else(|| Uuid::new_v4().to_string());
     let transaction = connection.transaction()?;
-    transaction.execute("INSERT INTO import_batches (id, account_id, original_filename, content_sha256, coverage_start, coverage_end) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![batch_id, account_id, path.file_name().and_then(|value| value.to_str()).unwrap_or("broker-export.csv"), digest, parsed.start.to_string(), parsed.end.to_string()])?;
+    if !repairing {
+        transaction.execute("INSERT INTO import_batches (id, account_id, original_filename, content_sha256, coverage_start, coverage_end) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", params![batch_id, account_id, path.file_name().and_then(|value| value.to_str()).unwrap_or("broker-export.csv"), digest, parsed.start.to_string(), parsed.end.to_string()])?;
+    }
     let mut events_added = 0;
     for event in &new_events {
         if let Some(instrument_id) = &event.instrument_id {
@@ -608,6 +653,17 @@ pub fn import_csv(
             )?;
         }
         events_added += transaction.execute("INSERT OR IGNORE INTO events (id, account_id, import_batch_id, source_id, event_type, occurred_at, description, amount_coefficient, amount_scale, currency, quantity_coefficient, quantity_scale, instrument_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)", params![Uuid::new_v4().to_string(), account_id, batch_id, event.source_id, event.event_type, event.occurred_at, event.description, event.amount.as_ref().map(|value| &value.coefficient), event.amount.as_ref().map(|value| value.scale), event.currency, event.quantity.as_ref().map(|value| &value.coefficient), event.quantity.as_ref().map(|value| value.scale), event.instrument_id])?;
+        if event.instrument_id.is_some() {
+            transaction.execute(
+                "UPDATE events
+                 SET instrument_id=CASE
+                   WHEN instrument_id IS NULL OR instrument_id LIKE 'symbol:%' THEN ?3
+                   ELSE instrument_id
+                 END
+                 WHERE account_id=?1 AND source_id=?2",
+                params![account_id, event.source_id, event.instrument_id],
+            )?;
+        }
     }
     for position in &parsed.positions {
         transaction.execute(
@@ -624,10 +680,32 @@ pub fn import_csv(
                 position.instrument_id, position.asset_class
             ],
         )?;
+        if let (Some(price), Some(currency)) = (&position.market_price, &position.price_currency) {
+            transaction.execute(
+                "INSERT INTO market_prices (instrument_id, price_coefficient, price_scale, currency, as_of, source)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'broker_import')
+                 ON CONFLICT(instrument_id) DO UPDATE SET
+                   price_coefficient=excluded.price_coefficient,
+                   price_scale=excluded.price_scale,
+                   currency=excluded.currency,
+                   as_of=excluded.as_of,
+                   source=excluded.source
+                 WHERE excluded.as_of >= market_prices.as_of",
+                params![
+                    position.instrument_id,
+                    price.coefficient,
+                    price.scale,
+                    currency,
+                    position.report_date.to_string()
+                ],
+            )?;
+        }
         transaction.execute(
-            "INSERT OR IGNORE INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale)
+            "INSERT INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ",
+             ON CONFLICT(account_id, report_date, instrument_id) DO UPDATE SET
+               quantity_coefficient=excluded.quantity_coefficient,
+               quantity_scale=excluded.quantity_scale",
             params![
                 Uuid::new_v4().to_string(), account_id, batch_id,
                 position.report_date.to_string(), position.instrument_id,
@@ -636,12 +714,19 @@ pub fn import_csv(
         )?;
     }
     transaction.commit()?;
+    let mut warnings = parsed.warnings;
+    if repairing {
+        warnings.push(
+            "This file was already imported. Worthweave repaired missing investment links without duplicating transactions."
+                .into(),
+        );
+    }
     Ok(ImportResult {
         batch_id,
         coverage_start: parsed.start.to_string(),
         coverage_end: parsed.end.to_string(),
         events_added,
-        warnings: parsed.warnings,
+        warnings,
     })
 }
 
@@ -729,6 +814,23 @@ mod tests {
     }
 
     #[test]
+    fn ibkr_parser_links_symbol_only_trades_to_snapshot_identity() {
+        let parsed = parse_ibkr(b"ClientAccountID,CurrencyPrimary,TradeID,Buy/Sell,TradeMoney,Date/Time,Quantity,NetCash,Description,Symbol,ISIN\nU1,USD,T1,BUY,20.00,2026-07-01;10:00:00,2,-20.00,Example,TEST,\nClientAccountID,CurrencyPrimary,ReportDate,Quantity,MarkPrice,PositionValue,CostBasisMoney,LevelOfDetail,Symbol,Description,ISIN,Conid,AssetClass\nU1,USD,2026-07-10,2,10,20,20,Summary,TEST,Example,US00TEST0001,123,STK\n").expect("valid flex export");
+        assert_eq!(
+            parsed.events[0].instrument_id.as_deref(),
+            Some("US00TEST0001")
+        );
+        assert_eq!(
+            parsed.positions[0]
+                .market_price
+                .as_ref()
+                .map(|price| price.coefficient.as_str()),
+            Some("10")
+        );
+        assert_eq!(parsed.positions[0].price_currency.as_deref(), Some("USD"));
+    }
+
+    #[test]
     fn ibkr_import_persists_reconcilable_positions_atomically() {
         let directory = tempfile::tempdir().expect("temp directory");
         let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
@@ -754,6 +856,32 @@ mod tests {
             crate::projections::reconciliation(&connection).expect("reconciliation");
         assert_eq!(reconciliation.len(), 1);
         assert_eq!(reconciliation[0].status, "matched");
+        connection
+            .execute("UPDATE events SET instrument_id='symbol:TEST'", [])
+            .expect("simulate legacy symbol fallback");
+        let repaired =
+            import_csv(&mut connection, &account.id, &path, "invest").expect("idempotent repair");
+        assert_eq!(repaired.events_added, 0);
+        assert!(
+            repaired
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("repaired"))
+        );
+        let repaired_id: Option<String> = connection
+            .query_row("SELECT instrument_id FROM events LIMIT 1", [], |row| {
+                row.get(0)
+            })
+            .expect("repaired instrument id");
+        assert_eq!(repaired_id.as_deref(), Some("GB00TEST0001"));
+        let imported_price: (String, String) = connection
+            .query_row(
+                "SELECT price_coefficient, currency FROM market_prices WHERE instrument_id='GB00TEST0001'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("broker price");
+        assert_eq!(imported_price, ("10".into(), "GBP".into()));
     }
 
     #[test]
@@ -789,7 +917,17 @@ mod tests {
             .expect("project root");
         for path in csv_files(&project_root.join(".dev").join("ibkr")) {
             let content = std::fs::read(&path).expect("read local IBKR export");
-            parse_ibkr(&content).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            let parsed =
+                parse_ibkr(&content).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            assert!(
+                parsed
+                    .events
+                    .iter()
+                    .all(|event| !matches!(event.event_type, "buy" | "sell")
+                        || event.instrument_id.is_some()),
+                "{} contains a trade that could not be linked to an investment",
+                path.display()
+            );
         }
         for path in csv_files(&project_root.join(".dev").join("trading212")) {
             let content = std::fs::read(&path).expect("read local Trading 212 export");

@@ -516,9 +516,10 @@ mod tests {
             },
         )
         .expect("instrument metadata");
-        assert_eq!(
-            projections::reconciliation(&connection).expect("reconciliation")[0].status,
-            "unavailable"
+        assert!(
+            projections::reconciliation(&connection)
+                .expect("reconciliation")
+                .is_empty()
         );
         let batch_id: String = connection
             .query_row("SELECT id FROM import_batches LIMIT 1", [], |row| {
@@ -612,6 +613,41 @@ mod tests {
         assert_eq!(allocation.by_asset_class[0].label, "Equity");
         assert_eq!(allocation.by_sector[0].label, "Technology");
         assert_eq!(allocation.by_geography[0].label, "United Kingdom");
+    }
+
+    #[test]
+    fn latest_broker_snapshot_controls_current_quantity_without_inventing_cost_basis() {
+        let directory = tempdir().expect("temp directory");
+        let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        let account = db::create_account(
+            &connection,
+            &CreateAccountInput {
+                broker: "ibkr".into(),
+                jurisdiction: "GB".into(),
+                account_type: "invest".into(),
+                display_name: "IBKR Invest".into(),
+            },
+        )
+        .expect("create account");
+        let export = directory.path().join("history.csv");
+        std::fs::write(
+            &export,
+            "ClientAccountID,CurrencyPrimary,TradeID,Buy/Sell,TradeMoney,Date/Time,Quantity,NetCash,Description,Symbol,ISIN,AssetClass\n\
+             U1,GBP,T1,BUY,20.00,2026-07-01;10:00:00,2,-20.00,Example,TEST,GB00TEST0001,STK\n\
+             ClientAccountID,CurrencyPrimary,ReportDate,Quantity,MarkPrice,PositionValue,CostBasisMoney,LevelOfDetail,Symbol,Description,ISIN,Conid,AssetClass\n\
+             U1,GBP,2026-07-10,3,10,30,25,Summary,TEST,Example,GB00TEST0001,123,STK\n",
+        )
+        .expect("write export");
+        imports::import_csv(&mut connection, &account.id, &export, "invest").expect("import");
+
+        let holdings = projections::holdings(&connection).expect("holdings");
+        assert_eq!(holdings.len(), 1);
+        assert_eq!(holdings[0].quantity, "3");
+        assert!(!holdings[0].cost_basis_complete);
+        assert!(holdings[0].cost_basis.is_none());
+        let reconciliation = projections::reconciliation(&connection).expect("reconciliation");
+        assert_eq!(reconciliation[0].status, "mismatch");
+        assert_eq!(reconciliation[0].difference.as_deref(), Some("-1"));
     }
 
     #[test]

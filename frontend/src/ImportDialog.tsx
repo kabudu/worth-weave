@@ -27,7 +27,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
   const [jurisdiction, setJurisdiction] = useState<Account["jurisdiction"]>("GB");
   const [accountType, setAccountType] = useState<AccountType>("stocks_and_shares_isa");
   const [displayName, setDisplayName] = useState("Trading 212 ISA");
-  const [filePath, setFilePath] = useState("");
+  const [filePaths, setFilePaths] = useState<string[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
 
   useEffect(() => {
@@ -48,8 +48,17 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
     },
   });
   const importMutation = useMutation({
-    mutationFn: ({ account, source }: { account: Account; source: string }) =>
-      importBrokerFile(account, source),
+    mutationFn: async ({ account, sources }: { account: Account; sources: string[] }) => {
+      const results: ImportResult[] = [];
+      for (const source of sources) results.push(await importBrokerFile(account, source));
+      return {
+        ...results.at(-1)!,
+        coverage_start: results.map((item) => item.coverage_start).sort()[0]!,
+        coverage_end: results.map((item) => item.coverage_end).sort().at(-1)!,
+        events_added: results.reduce((total, item) => total + item.events_added, 0),
+        warnings: results.flatMap((item) => item.warnings),
+      };
+    },
     onSuccess: async (nextResult) => {
       setResult(nextResult);
       await Promise.all([
@@ -60,6 +69,7 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
         queryClient.invalidateQueries({ queryKey: ["valuation"] }),
         queryClient.invalidateQueries({ queryKey: ["allocation"] }),
         queryClient.invalidateQueries({ queryKey: ["reconciliation"] }),
+        queryClient.invalidateQueries({ queryKey: ["total-return"] }),
       ]);
     },
   });
@@ -72,16 +82,16 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
   function handleImport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const account = accounts.data?.find((candidate) => candidate.id === effectiveSelectedId);
-    if (account && account.broker !== "robinhood" && filePath) importMutation.mutate({ account, source: filePath });
+    if (account && account.broker !== "robinhood" && filePaths.length > 0) importMutation.mutate({ account, sources: filePaths });
   }
 
   async function chooseFile() {
     const selected = await openFileDialog({
-      multiple: false,
+      multiple: true,
       directory: false,
       filters: [{ name: "Broker CSV export", extensions: ["csv"] }],
     });
-    if (selected) setFilePath(selected);
+    if (selected) setFilePaths(Array.isArray(selected) ? selected : [selected]);
   }
 
   function close() {
@@ -137,8 +147,8 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
       {result ? (
         <section className="import-success" aria-live="polite">
           <span>✓</span>
-          <h3>Import complete</h3>
-          <p>{result.events_added.toLocaleString()} transactions and cash events added.</p>
+          <h3>{result.events_added === 0 ? "Import checked" : "Import complete"}</h3>
+          <p>{result.events_added === 0 ? "No duplicate transactions were added. Existing investment links and broker market data were refreshed." : `${result.events_added.toLocaleString()} transactions and cash events added.`}</p>
           <dl><div><dt>First date</dt><dd>{result.coverage_start}</dd></div><div><dt>Last date</dt><dd>{result.coverage_end}</dd></div></dl>
           {result.warnings.map((warning) => <small key={warning}>{warning}</small>)}
           <button className="primary-button" type="button" onClick={close}>Done</button>
@@ -162,8 +172,8 @@ export function ImportDialog({ open, onClose }: ImportDialogProps) {
             <h3>Choose an exported CSV file</h3>
             <p>Worthweave checks the file on this Mac and will not import the same file twice.</p>
             <label>Import into<select value={effectiveSelectedId} required onChange={(event) => setSelectedId(event.target.value)}><option value="" disabled>Select an account</option>{accounts.data?.map((account) => <option value={account.id} key={account.id}>{account.display_name}</option>)}</select></label>
-            <button className="file-drop" type="button" disabled={!importSupported} onClick={chooseFile}><span>{importSupported ? filePath ? filePath.split(/[\\/]/).at(-1) : "Choose CSV file" : "Robinhood import is not ready yet"}</span><small>{importSupported ? "CSV files up to 50 MB" : "We need to test sample Robinhood export files first"}</small></button>
-            <button type="submit" className="primary-button" disabled={!effectiveSelectedId || !filePath || !importSupported || importMutation.isPending}>{importMutation.isPending ? "Checking and importing…" : "Import file"}</button>
+            <button className="file-drop" type="button" disabled={!importSupported} onClick={chooseFile}><span>{importSupported ? filePaths.length > 1 ? `${filePaths.length} CSV files selected` : filePaths.length === 1 ? filePaths[0]!.split(/[\\/]/).at(-1) : "Choose CSV files" : "Robinhood import is not ready yet"}</span><small>{importSupported ? "Select one or several exports · up to 50 MB each" : "We need to test sample Robinhood export files first"}</small></button>
+            <button type="submit" className="primary-button" disabled={!effectiveSelectedId || filePaths.length === 0 || !importSupported || importMutation.isPending}>{importMutation.isPending ? `Checking ${filePaths.length} file${filePaths.length === 1 ? "" : "s"}…` : `Import ${filePaths.length > 1 ? `${filePaths.length} files` : "file"}`}</button>
             {importMutation.isError && <small className="form-error" role="alert">{importMutation.error.message}</small>}
           </form>
         </div>

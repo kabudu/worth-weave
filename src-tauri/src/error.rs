@@ -12,8 +12,6 @@ pub enum WorthweaveError {
     AccountNotFound,
     #[error("account type confirmation does not match the destination account")]
     AccountTypeMismatch,
-    #[error("this file has already been imported for the account")]
-    DuplicateImport,
     #[error("import exceeds the 50 MiB size limit")]
     ImportTooLarge,
     #[error("import contains too many rows")]

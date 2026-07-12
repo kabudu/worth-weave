@@ -56,7 +56,7 @@ struct Position {
     geography: Option<String>,
 }
 
-pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
+fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
     let mut statement = connection.prepare(
         "SELECT e.account_id, a.display_name, a.broker, e.instrument_id, e.event_type,
                 e.amount_coefficient, e.amount_scale, e.currency,
@@ -154,6 +154,103 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
         .collect())
 }
 
+pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
+    let ledger = ledger_holdings(connection)?;
+    let mut ledger_by_instrument: BTreeMap<(String, String), Holding> = ledger
+        .into_iter()
+        .map(|holding| {
+            (
+                (holding.account_id.clone(), holding.instrument_id.clone()),
+                holding,
+            )
+        })
+        .collect();
+    let mut accounts_with_snapshots = std::collections::BTreeSet::new();
+    let mut current = Vec::new();
+    let mut statement = connection.prepare(
+        "SELECT p.account_id, p.instrument_id, p.quantity_coefficient, p.quantity_scale,
+                a.display_name, a.broker, i.symbol, i.name, i.asset_class, i.sector, i.geography
+         FROM broker_position_snapshots p
+         JOIN accounts a ON a.id=p.account_id
+         LEFT JOIN instruments i ON i.id=p.instrument_id
+         JOIN (
+           SELECT account_id, MAX(report_date) AS report_date
+           FROM broker_position_snapshots GROUP BY account_id
+         ) latest ON latest.account_id=p.account_id AND latest.report_date=p.report_date
+         ORDER BY a.display_name, p.instrument_id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            exact(row.get(2)?, row.get(3)?).unwrap_or_default(),
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<String>>(7)?,
+            row.get::<_, Option<String>>(8)?,
+            row.get::<_, Option<String>>(9)?,
+            row.get::<_, Option<String>>(10)?,
+        ))
+    })?;
+    for row in rows {
+        let (
+            account_id,
+            instrument_id,
+            quantity,
+            account_name,
+            broker,
+            symbol,
+            name,
+            asset_class,
+            sector,
+            geography,
+        ) = row?;
+        accounts_with_snapshots.insert(account_id.clone());
+        if quantity.is_zero() {
+            continue;
+        }
+        let key = (account_id.clone(), instrument_id.clone());
+        if let Some(mut holding) = ledger_by_instrument.remove(&key) {
+            if holding.quantity.parse::<Decimal>().ok() != Some(quantity) {
+                holding.cost_basis = None;
+                holding.average_cost = None;
+                holding.cost_basis_complete = false;
+            }
+            holding.quantity = quantity.normalize().to_string();
+            current.push(holding);
+        } else {
+            current.push(Holding {
+                account_id,
+                account_name,
+                broker,
+                instrument_id,
+                symbol,
+                name,
+                asset_class,
+                sector,
+                geography,
+                quantity: quantity.normalize().to_string(),
+                cost_basis: None,
+                average_cost: None,
+                currency: None,
+                cost_basis_complete: false,
+            });
+        }
+    }
+    current.extend(
+        ledger_by_instrument
+            .into_values()
+            .filter(|holding| !accounts_with_snapshots.contains(&holding.account_id)),
+    );
+    current.sort_by(|left, right| {
+        left.account_name
+            .cmp(&right.account_name)
+            .then(left.instrument_id.cmp(&right.instrument_id))
+    });
+    Ok(current)
+}
+
 pub fn income(connection: &Connection) -> Result<Vec<IncomeSummary>> {
     let mut statement = connection.prepare(
         "SELECT e.event_type, e.amount_coefficient, e.amount_scale, e.currency
@@ -184,8 +281,15 @@ pub fn income(connection: &Connection) -> Result<Vec<IncomeSummary>> {
 }
 
 pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>> {
-    let holdings = holdings(connection)?;
-    let mut broker = BTreeMap::new();
+    let ledger: BTreeMap<(String, String), Holding> = ledger_holdings(connection)?
+        .into_iter()
+        .map(|holding| {
+            (
+                (holding.account_id.clone(), holding.instrument_id.clone()),
+                holding,
+            )
+        })
+        .collect();
     let mut statement = connection.prepare(
         "SELECT p.account_id, p.instrument_id, p.report_date, a.display_name,
                 p.quantity_coefficient, p.quantity_scale
@@ -206,52 +310,30 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
             ),
         ))
     })?;
-    for row in rows {
-        let (key, value) = row?;
-        broker.insert(key, value);
-    }
-
     let mut result = Vec::new();
-    for holding in holdings {
-        let ledger = holding.quantity.parse::<Decimal>().unwrap_or_default();
-        let snapshot = broker.remove(&(holding.account_id.clone(), holding.instrument_id.clone()));
-        let (as_of, broker_quantity, difference, status) = match snapshot {
-            Some((date, _account_name, quantity)) => {
-                let delta = ledger - quantity;
-                (
-                    Some(date),
-                    Some(quantity.normalize().to_string()),
-                    Some(delta.normalize().to_string()),
-                    if delta.is_zero() {
-                        "matched"
-                    } else {
-                        "mismatch"
-                    },
-                )
-            }
-            None => (None, None, None, "unavailable"),
+    for row in rows {
+        let ((account_id, instrument_id), (date, account_name, broker_quantity)) = row?;
+        if broker_quantity.is_zero() {
+            continue;
+        }
+        let ledger_quantity = ledger
+            .get(&(account_id.clone(), instrument_id.clone()))
+            .and_then(|holding| holding.quantity.parse::<Decimal>().ok());
+        let difference = ledger_quantity.map(|quantity| quantity - broker_quantity);
+        let status = match difference {
+            Some(value) if value.is_zero() => "matched",
+            Some(_) => "mismatch",
+            None => "unavailable",
         };
-        result.push(ReconciliationItem {
-            account_id: holding.account_id,
-            account_name: holding.account_name,
-            instrument_id: holding.instrument_id,
-            as_of,
-            ledger_quantity: ledger.normalize().to_string(),
-            broker_quantity,
-            difference,
-            status,
-        });
-    }
-    for ((account_id, instrument_id), (date, account_name, quantity)) in broker {
         result.push(ReconciliationItem {
             account_id,
             account_name,
             instrument_id,
             as_of: Some(date),
-            ledger_quantity: "0".into(),
-            broker_quantity: Some(quantity.normalize().to_string()),
-            difference: Some((-quantity).normalize().to_string()),
-            status: "mismatch",
+            ledger_quantity: ledger_quantity.unwrap_or_default().normalize().to_string(),
+            broker_quantity: Some(broker_quantity.normalize().to_string()),
+            difference: difference.map(|value| value.normalize().to_string()),
+            status,
         });
     }
     result.sort_by(|left, right| {

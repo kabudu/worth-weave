@@ -127,6 +127,14 @@ fn valid_massive_symbol(symbol: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
 }
 
+fn massive_snapshot_price(ticker: Option<&Value>) -> Option<Decimal> {
+    ["/lastTrade/p", "/day/c", "/prevDay/c"]
+        .into_iter()
+        .filter_map(|path| ticker?.pointer(path)?.as_number())
+        .filter_map(|number| Decimal::from_str(&number.to_string()).ok())
+        .find(|price| *price > Decimal::ZERO)
+}
+
 async fn massive_json(client: &reqwest::Client, key: &str, url: String) -> Result<Option<Value>> {
     for attempt in 0..3 {
         let response = match client.get(&url).bearer_auth(key).send().await {
@@ -213,17 +221,7 @@ async fn fetch_massive_candidate(
     let url = format!("{MASSIVE_API_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}");
     let snapshot = massive_json(&client, &key, url).await?;
     let ticker = snapshot.as_ref().and_then(|v| v.get("ticker"));
-    let price = ticker
-        .and_then(|t| {
-            t.pointer("/lastTrade/p")
-                .or_else(|| t.pointer("/day/c"))
-                .or_else(|| t.pointer("/prevDay/c"))
-        })
-        .and_then(Value::as_f64);
-    if let Some(price) = price
-        .and_then(Decimal::from_f64_retain)
-        .filter(|p| *p > Decimal::ZERO)
-    {
+    if let Some(price) = massive_snapshot_price(ticker) {
         let millis = ticker
             .and_then(|t| t.get("updated"))
             .and_then(Value::as_i64)
@@ -1078,6 +1076,19 @@ pub fn allocation(connection: &Connection) -> Result<AllocationReport> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn massive_snapshot_falls_back_from_zero_day_to_previous_close() {
+        let response = serde_json::json!({
+            "ticker": {
+                "lastTrade": null,
+                "day": { "c": 0 },
+                "prevDay": { "c": 315.32 }
+            }
+        });
+        let price = massive_snapshot_price(response.get("ticker")).expect("previous close");
+        assert_eq!(price.to_string(), "315.32");
+    }
 
     const ECB_FIXTURE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
       <gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01" xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">

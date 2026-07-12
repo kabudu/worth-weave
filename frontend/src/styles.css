@@ -297,3 +297,39 @@ footer { font-size:10px; }
 .about-brokers { display:flex;flex-wrap:wrap;gap:7px; }.about-brokers span { padding:6px 9px;border:1px solid var(--line);border-radius:999px;color:#53635b;font-size:9px; }.about-note { margin:17px 0;color:#718078;font-size:9px;line-height:1.55; }.about-done { width:100%;padding:12px; }
 @media (max-width:600px) { .report-title-row{display:grid;gap:18px}.valuation-total{text-align:left}.about-hero,.about-details{padding-left:24px;padding-right:24px}.about-facts{grid-template-columns:1fr}.import-dialog,.about-dialog,.settings-dialog,.market-dialog{width:calc(100vw - 24px);max-height:calc(100vh - 24px)} }
 @media (max-width:600px) { .market-provider{padding:18px 20px}.market-provider>form,.market-provider-actions{grid-template-columns:1fr}.market-provider button{width:100%} }
+
+/* Desktop type scale: designed for Retina displays and full-screen finance workflows. */
+@media (min-width: 641px) {
+  .app-shell { grid-template-columns:264px 1fr; }
+  .sidebar nav a,.sidebar nav button { font-size:15px;line-height:1.35; }
+  .privacy-card strong,.profile-button strong { font-size:13px; }
+  .privacy-card div span,.profile-button small { font-size:12px;line-height:1.45; }
+  .eyebrow,.kicker,.section-kicker,.metric-heading,.metric-card>span,.currency-form>label { font-size:12px; }
+  .primary-button,.secondary-button,.text-button,.ask-button,.prompt-row button,.valuation-total button,.journey-step button { font-size:13px;min-height:40px; }
+  .hero-copy { font-size:15px;max-width:650px; }
+  .metric-card { min-height:178px;padding:24px; }
+  .metric-card p,.journey-step p,.insight-card>p,.dialog-columns form>p,.market-columns form>p,.settings-content>div>p,.backup-settings p,.ai-settings p,.performance-card p,.report-page>header>p,.report-empty p { font-size:13px;line-height:1.55; }
+  .metric-heading,.metric-card>span,.status-chip { font-size:11px; }
+  .section-heading h2 { font-size:21px; }
+  .journey-step strong,.insight-title strong,.service-alert strong,.service-alert p { font-size:14px; }
+  .journey-step small,.step-count,.insight-title small,.insight-card form>label,.insight-answer small { font-size:11px; }
+  .insight-answer p { font-size:13px; }
+  blockquote { font-size:21px; }
+  .dialog-topline h2 { font-size:28px; }
+  .dialog-columns h3,.market-columns h3,.market-provider h3,.ai-settings h3 { font-size:17px; }
+  .dialog-columns label,.market-columns label,.market-provider label,.backup-settings label { font-size:11px; }
+  .dialog-columns input,.dialog-columns select,.market-columns input,.market-columns select,.market-provider input,.backup-settings input { min-height:44px;font-size:14px; }
+  .dialog-privacy,.file-drop small,.form-error,.backup-success,.ai-setup-status,.ai-setup-success { font-size:12px; }
+  .file-drop span { font-size:13px; }
+  .report-page>header h1 { font-size:clamp(36px,3.4vw,52px); }
+  .report-title-row p,.attribution-heading p { font-size:13px; }
+  .report-table-wrap th,.report-table-wrap td small,.basis-warning,.event-pill { font-size:12px; }
+  .report-table-wrap td,.report-table-wrap td strong,.allocation-row strong,.allocation-row small,.allocation-row>b,.income-grid dt,.income-grid dd { font-size:13px; }
+  .valuation-total>span,.valuation-total>small { font-size:12px; }
+  .attribution-components span,.attribution-notes { font-size:11px; }
+  .attribution-components strong { font-size:13px; }
+  .reconciliation-card h2 { font-size:18px; }
+  .reconciliation-card p,.reconciliation-list strong { font-size:12px; }
+  .reconciliation-list small,.reconciliation-status { font-size:10px; }
+  footer { font-size:11px; }
+}

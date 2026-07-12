@@ -336,3 +336,19 @@ footer { font-size:10px; }
   .reconciliation-list small,.reconciliation-status { font-size:10px; }
   footer { font-size:11px; }
 }
+
+/* Connected portfolio tabs and content surface. */
+.portfolio-browser{grid-template-columns:minmax(0,1fr) minmax(300px,520px) auto;gap:16px 18px;align-items:center;margin-bottom:0;padding:0 22px 18px;border-radius:18px 18px 0 0;border-bottom:0;background:rgba(255,255,255,.72)}
+.portfolio-tabs{grid-column:1;align-self:stretch;gap:24px;border-bottom:1px solid var(--line)}
+.portfolio-tabs button{position:relative;border:0;border-radius:0;background:transparent;color:#53635b;padding:18px 2px 14px}
+.portfolio-tabs button[aria-selected=true]{background:transparent;color:#174f3f}
+.portfolio-tabs button[aria-selected=true]::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:#1f7455}
+.portfolio-search{grid-column:2;grid-row:1;margin-top:12px}
+.portfolio-browser>p{grid-column:3;grid-row:1;margin:27px 0 0}
+.portfolio-subtabs{grid-column:1/-1;grid-row:2;gap:0;margin-top:2px;border-bottom:1px solid var(--line)}
+.portfolio-subtabs button{margin-bottom:-1px;border:1px solid transparent;border-bottom-color:var(--line);border-radius:10px 10px 0 0;background:transparent;padding:10px 16px}
+.portfolio-subtabs button.active{border-color:var(--line);border-bottom-color:#fff;background:#fff;box-shadow:0 -3px 12px rgba(20,44,36,.04)}
+.portfolio-content{border-radius:0 0 18px 18px;background:#fff}
+.portfolio-content table{min-width:1040px}.portfolio-content.single-account table{min-width:920px}
+.portfolio-browser+.report-empty{border-radius:0 0 18px 18px;background:#fff}
+@media(max-width:850px){.portfolio-browser{grid-template-columns:1fr;padding:0 16px 16px}.portfolio-tabs,.portfolio-search,.portfolio-browser>p,.portfolio-subtabs{grid-column:1;grid-row:auto}.portfolio-browser>p{margin:0}.portfolio-subtabs{overflow-x:auto;flex-wrap:nowrap}}

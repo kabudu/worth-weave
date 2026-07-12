@@ -12,9 +12,10 @@ use error::{Result, WorthweaveError};
 use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
     CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, FxRefreshResult, Holding,
-    ImportResult, IncomeSummary, PortfolioExplanation, PortfolioSnapshot, PortfolioSummary,
-    PriceQuote, ReconciliationItem, SaveAiSettingsInput, SetFxRateInput, SetPriceInput,
-    TotalReturnAttribution, UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
+    ImportResult, IncomeSummary, MassiveProviderStatus, MassiveRefreshResult, PortfolioExplanation,
+    PortfolioSnapshot, PortfolioSummary, PriceQuote, ReconciliationItem, SaveAiSettingsInput,
+    SaveMassiveApiKeyInput, SetFxRateInput, SetPriceInput, TotalReturnAttribution,
+    UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{Emitter, Manager, State};
 
@@ -163,6 +164,30 @@ async fn refresh_fx_rates(state: State<'_, AppState>) -> Result<FxRefreshResult>
     let reference = market::fetch_ecb_reference_rates().await?;
     with_connection(&state, |connection| {
         market::save_ecb_reference_rates(connection, &reference)
+    })
+}
+
+#[tauri::command]
+fn massive_provider_status() -> Result<MassiveProviderStatus> {
+    market::massive_provider_status()
+}
+
+#[tauri::command]
+fn save_massive_api_key(input: SaveMassiveApiKeyInput) -> Result<MassiveProviderStatus> {
+    market::save_massive_api_key(&input.api_key)
+}
+
+#[tauri::command]
+fn remove_massive_api_key() -> Result<MassiveProviderStatus> {
+    market::remove_massive_api_key()
+}
+
+#[tauri::command]
+async fn refresh_massive_prices(state: State<'_, AppState>) -> Result<MassiveRefreshResult> {
+    let candidates = with_connection(&state, |connection| market::massive_candidates(connection))?;
+    let observations = market::fetch_massive_prices(candidates).await?;
+    with_connection(&state, |connection| {
+        market::save_massive_prices(connection, observations)
     })
 }
 
@@ -329,6 +354,10 @@ pub fn run() {
             set_market_price,
             set_fx_rate,
             refresh_fx_rates,
+            massive_provider_status,
+            save_massive_api_key,
+            remove_massive_api_key,
+            refresh_massive_prices,
             update_instrument_metadata,
             portfolio_valuation,
             portfolio_total_return,

@@ -188,6 +188,26 @@ pub struct FxRefreshResult {
     pub source: &'static str,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct SaveMassiveApiKeyInput {
+    pub api_key: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MassiveProviderStatus {
+    pub configured: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MassiveRefreshResult {
+    pub requested: usize,
+    pub prices_saved: usize,
+    pub delisted: Vec<String>,
+    pub not_found: Vec<String>,
+    pub unsupported: Vec<String>,
+    pub failed: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ValuedHolding {
     pub holding: Holding,

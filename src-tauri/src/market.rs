@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use futures_util::{StreamExt, stream};
 use rusqlite::{Connection, OptionalExtension, params};
 use rust_decimal::Decimal;
 
@@ -13,10 +14,299 @@ use crate::models::{
     SetFxRateInput, SetPriceInput, TotalReturnAttribution, ValuationSummary, ValuedHolding,
 };
 use crate::projections;
+use serde_json::Value;
 use uuid::Uuid;
 
 const ECB_DAILY_RATES_URL: &str = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
 const MAX_ECB_RESPONSE_BYTES: usize = 256 * 1024;
+const MASSIVE_API_BASE: &str = "https://api.massive.com";
+const MASSIVE_KEYCHAIN_SERVICE: &str = "app.worthweave.portfolio";
+const MASSIVE_KEYCHAIN_ACCOUNT: &str = "massive-api-key";
+
+#[derive(Debug, Clone)]
+pub(crate) struct MassiveCandidate {
+    pub instrument_id: String,
+    pub symbol: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum MassiveObservation {
+    Price {
+        candidate: MassiveCandidate,
+        price: Decimal,
+        as_of: String,
+    },
+    Delisted(String),
+    NotFound(String),
+    Unsupported(String),
+    Failed(String),
+}
+
+fn massive_key_entry() -> Result<keyring::Entry> {
+    keyring::Entry::new(MASSIVE_KEYCHAIN_SERVICE, MASSIVE_KEYCHAIN_ACCOUNT).map_err(|e| {
+        WorthweaveError::InvalidMarketData(format!("could not access macOS Keychain: {e}"))
+    })
+}
+
+pub fn massive_provider_status() -> Result<crate::models::MassiveProviderStatus> {
+    let configured = match massive_key_entry()?.get_password() {
+        Ok(value) => !value.trim().is_empty(),
+        Err(keyring::Error::NoEntry) => false,
+        Err(e) => {
+            return Err(WorthweaveError::InvalidMarketData(format!(
+                "could not read Massive API key from macOS Keychain: {e}"
+            )));
+        }
+    };
+    Ok(crate::models::MassiveProviderStatus { configured })
+}
+
+pub fn save_massive_api_key(api_key: &str) -> Result<crate::models::MassiveProviderStatus> {
+    let api_key = api_key.trim();
+    if api_key.len() < 16 || api_key.len() > 512 || api_key.chars().any(char::is_whitespace) {
+        return Err(WorthweaveError::InvalidMarketData(
+            "Massive API key is invalid".into(),
+        ));
+    }
+    massive_key_entry()?.set_password(api_key).map_err(|e| {
+        WorthweaveError::InvalidMarketData(format!(
+            "could not save Massive API key in macOS Keychain: {e}"
+        ))
+    })?;
+    Ok(crate::models::MassiveProviderStatus { configured: true })
+}
+
+pub fn remove_massive_api_key() -> Result<crate::models::MassiveProviderStatus> {
+    match massive_key_entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => {
+            Ok(crate::models::MassiveProviderStatus { configured: false })
+        }
+        Err(e) => Err(WorthweaveError::InvalidMarketData(format!(
+            "could not remove Massive API key from macOS Keychain: {e}"
+        ))),
+    }
+}
+
+pub fn massive_candidates(connection: &Connection) -> Result<Vec<MassiveCandidate>> {
+    let mut seen = BTreeSet::new();
+    let mut candidates = Vec::new();
+    for holding in projections::holdings(connection)? {
+        let Some(symbol) = holding.symbol else {
+            continue;
+        };
+        if !seen.insert(holding.instrument_id.clone()) {
+            continue;
+        }
+        let source: Option<String> = connection
+            .query_row(
+                "SELECT source FROM market_prices WHERE instrument_id=?1",
+                [&holding.instrument_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if source
+            .as_deref()
+            .is_none_or(|source| source == "massive_snapshot")
+        {
+            candidates.push(MassiveCandidate {
+                instrument_id: holding.instrument_id,
+                symbol,
+            });
+        }
+    }
+    candidates.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    candidates.truncate(250);
+    Ok(candidates)
+}
+
+fn valid_massive_symbol(symbol: &str) -> bool {
+    !symbol.is_empty()
+        && symbol.len() <= 32
+        && symbol
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
+}
+
+async fn massive_json(client: &reqwest::Client, key: &str, url: String) -> Result<Option<Value>> {
+    for attempt in 0..3 {
+        let response = match client.get(&url).bearer_auth(key).send().await {
+            Ok(response) => response,
+            Err(error) if attempt < 2 && (error.is_timeout() || error.is_connect()) => {
+                tokio::time::sleep(Duration::from_millis(250 * (1 << attempt))).await;
+                continue;
+            }
+            Err(_) => {
+                return Err(WorthweaveError::InvalidMarketData(
+                    "Massive is temporarily unavailable".into(),
+                ));
+            }
+        };
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if attempt < 2
+            && (response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
+                || response.status().is_server_error())
+        {
+            tokio::time::sleep(Duration::from_millis(500 * (1 << attempt))).await;
+            continue;
+        }
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(WorthweaveError::InvalidMarketData(
+                "Massive did not accept the configured API key".into(),
+            ));
+        }
+        let response = response.error_for_status().map_err(|_| {
+            WorthweaveError::InvalidMarketData(
+                "Massive market data is temporarily unavailable".into(),
+            )
+        })?;
+        return Ok(Some(response.json().await.map_err(|_| {
+            WorthweaveError::InvalidMarketData("Massive returned an unreadable response".into())
+        })?));
+    }
+    Err(WorthweaveError::InvalidMarketData(
+        "Massive is temporarily unavailable".into(),
+    ))
+}
+
+pub async fn fetch_massive_prices(
+    candidates: Vec<MassiveCandidate>,
+) -> Result<Vec<MassiveObservation>> {
+    let key = massive_key_entry()?.get_password().map_err(|e| match e {
+        keyring::Error::NoEntry => {
+            WorthweaveError::InvalidMarketData("Configure a Massive API key first".into())
+        }
+        other => WorthweaveError::InvalidMarketData(format!(
+            "could not read Massive API key from macOS Keychain: {other}"
+        )),
+    })?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent("Worthweave/0.1")
+        .build()
+        .map_err(|e| {
+            WorthweaveError::InvalidMarketData(format!("could not prepare Massive request: {e}"))
+        })?;
+    let requests = candidates.into_iter().map(|candidate| {
+        let client = client.clone();
+        let key = key.clone();
+        async move {
+            let fallback = candidate.symbol.trim().to_uppercase();
+            fetch_massive_candidate(&client, &key, candidate)
+                .await
+                .unwrap_or(MassiveObservation::Failed(fallback))
+        }
+    });
+    Ok(stream::iter(requests).buffer_unordered(4).collect().await)
+}
+
+async fn fetch_massive_candidate(
+    client: &reqwest::Client,
+    key: &str,
+    candidate: MassiveCandidate,
+) -> Result<MassiveObservation> {
+    let symbol = candidate.symbol.trim().to_uppercase();
+    if !valid_massive_symbol(&symbol) {
+        return Ok(MassiveObservation::Unsupported(candidate.symbol));
+    }
+    let url = format!("{MASSIVE_API_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}");
+    let snapshot = massive_json(&client, &key, url).await?;
+    let ticker = snapshot.as_ref().and_then(|v| v.get("ticker"));
+    let price = ticker
+        .and_then(|t| {
+            t.pointer("/lastTrade/p")
+                .or_else(|| t.pointer("/day/c"))
+                .or_else(|| t.pointer("/prevDay/c"))
+        })
+        .and_then(Value::as_f64);
+    if let Some(price) = price
+        .and_then(Decimal::from_f64_retain)
+        .filter(|p| *p > Decimal::ZERO)
+    {
+        let millis = ticker
+            .and_then(|t| t.get("updated"))
+            .and_then(Value::as_i64)
+            .map(|n| {
+                if n > 10_000_000_000_000 {
+                    n / 1_000_000
+                } else {
+                    n
+                }
+            });
+        let as_of = millis
+            .and_then(DateTime::<Utc>::from_timestamp_millis)
+            .unwrap_or_else(Utc::now)
+            .to_rfc3339();
+        return Ok(MassiveObservation::Price {
+            candidate,
+            price,
+            as_of,
+        });
+    }
+    let reference = massive_json(
+        &client,
+        &key,
+        format!("{MASSIVE_API_BASE}/v3/reference/tickers?ticker={symbol}&active=false&limit=10"),
+    )
+    .await?;
+    let delisted = reference
+        .as_ref()
+        .and_then(|v| v.get("results"))
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items.iter().any(|item| {
+                item.get("ticker")
+                    .and_then(Value::as_str)
+                    .is_some_and(|t| t.eq_ignore_ascii_case(&symbol))
+            })
+        });
+    Ok(if delisted {
+        MassiveObservation::Delisted(symbol)
+    } else {
+        MassiveObservation::NotFound(symbol)
+    })
+}
+
+pub fn save_massive_prices(
+    connection: &Connection,
+    observations: Vec<MassiveObservation>,
+) -> Result<crate::models::MassiveRefreshResult> {
+    let requested = observations.len();
+    let transaction = connection.unchecked_transaction()?;
+    let (mut prices_saved, mut delisted, mut not_found, mut unsupported, mut failed) =
+        (0, vec![], vec![], vec![], vec![]);
+    for observation in observations {
+        match observation {
+            MassiveObservation::Price {
+                candidate,
+                price,
+                as_of,
+            } => {
+                let (coefficient, scale) = parts(price);
+                prices_saved += transaction.execute(
+                    "INSERT INTO market_prices (instrument_id, price_coefficient, price_scale, currency, as_of, source)
+                     VALUES (?1, ?2, ?3, 'USD', ?4, 'massive_snapshot')
+                     ON CONFLICT(instrument_id) DO UPDATE SET price_coefficient=excluded.price_coefficient, price_scale=excluded.price_scale,
+                     currency=excluded.currency, as_of=excluded.as_of, source=excluded.source WHERE market_prices.source='massive_snapshot' AND excluded.as_of >= market_prices.as_of",
+                    params![candidate.instrument_id, coefficient, scale, as_of])?;
+            }
+            MassiveObservation::Delisted(s) => delisted.push(s),
+            MassiveObservation::NotFound(s) => not_found.push(s),
+            MassiveObservation::Unsupported(s) => unsupported.push(s),
+            MassiveObservation::Failed(s) => failed.push(s),
+        }
+    }
+    transaction.commit()?;
+    Ok(crate::models::MassiveRefreshResult {
+        requested,
+        prices_saved,
+        delisted,
+        not_found,
+        unsupported,
+        failed,
+    })
+}
 
 pub(crate) struct EcbReferenceRates {
     as_of: String,

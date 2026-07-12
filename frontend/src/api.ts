@@ -234,6 +234,26 @@ export async function refreshFxRates() {
   return fxRefreshResultSchema.parse(await invoke("refresh_fx_rates"));
 }
 
+const massiveProviderStatusSchema = z.object({ configured: z.boolean() });
+const massiveRefreshResultSchema = z.object({
+  requested: z.number().int().nonnegative(), prices_saved: z.number().int().nonnegative(),
+  delisted: z.array(z.string()), not_found: z.array(z.string()), unsupported: z.array(z.string()),
+  failed: z.array(z.string()),
+});
+export type MassiveRefreshResult = z.infer<typeof massiveRefreshResultSchema>;
+export async function getMassiveProviderStatus() {
+  return massiveProviderStatusSchema.parse(await invoke("massive_provider_status"));
+}
+export async function saveMassiveApiKey(apiKey: string) {
+  return massiveProviderStatusSchema.parse(await invoke("save_massive_api_key", { input: { api_key: apiKey } }));
+}
+export async function removeMassiveApiKey() {
+  return massiveProviderStatusSchema.parse(await invoke("remove_massive_api_key"));
+}
+export async function refreshMassivePrices() {
+  return massiveRefreshResultSchema.parse(await invoke("refresh_massive_prices"));
+}
+
 export async function updateInstrumentMetadata(input: { instrument_id: string; asset_class: string; sector: string; geography: string }) {
   await invoke("update_instrument_metadata", { input });
 }

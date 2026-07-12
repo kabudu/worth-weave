@@ -72,6 +72,7 @@ main { padding: 0 5.2vw 30px; min-width: 0; overflow: hidden; }
 .status-orb strong,.status-orb span { display:block; }
 .status-orb strong { font: 600 22px "Manrope Variable"; color:#164f3e; }
 .status-orb span { color:#819089; font-size:8px; text-transform:uppercase; letter-spacing:1px; margin-top:2px; }
+.status-orb small{display:block;margin-top:5px;color:#53635b;font-size:8px;line-height:1.2}
 .service-alert { border:1px solid rgba(173,92,50,.16); background:#fff7ef; padding:12px 16px; border-radius:12px; display:flex; gap:12px; align-items:center; margin-bottom:18px; color:#774427; }
 .service-alert>span { width:25px;height:25px;display:grid;place-items:center;border-radius:50%;background:#ffe1c7;font-weight:700; }
 .service-alert strong,.service-alert p { font-size:11px; margin:0; }

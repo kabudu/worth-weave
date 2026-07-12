@@ -31,14 +31,16 @@ function BrandMark() {
   );
 }
 
-function StatusOrb({ accounts, imports, valued }: { accounts: number; imports: number; valued: boolean }) {
-  const progress = valued ? 100 : imports > 0 ? 66 : accounts > 0 ? 33 : 8;
-  const label = valued ? "valuation ready" : imports > 0 ? "data imported" : accounts > 0 ? "ready to import" : "setup started";
+function StatusOrb({ accounts, imports, valuedCount, totalCount, missingPrices }: { accounts: number; imports: number; valuedCount: number; totalCount: number; missingPrices: number }) {
+  const progress = totalCount > 0 ? Math.round(valuedCount / totalCount * 100) : imports > 0 ? 18 : accounts > 0 ? 10 : 4;
+  const headline = totalCount > 0 ? `${valuedCount}/${totalCount}` : imports > 0 ? "Imported" : accounts > 0 ? "Ready" : "Start";
+  const label = totalCount > 0 ? "holdings valued" : imports > 0 ? "add market data" : accounts > 0 ? "import a file" : "add an account";
   return (
     <div className="status-orb" style={{ "--progress": `${progress * 3.6}deg` } as CSSProperties}>
       <div>
-        <strong>{progress}%</strong>
+        <strong>{headline}</strong>
         <span>{label}</span>
+        {totalCount > 0 && missingPrices > 0 && <small>{missingPrices} prices needed</small>}
       </div>
     </div>
   );
@@ -160,7 +162,7 @@ export function App() {
               explained in plain English.
             </p>
           </div>
-          <StatusOrb accounts={accountCount} imports={importCount} valued={Boolean(valuation.data?.valuation_complete)} />
+          <StatusOrb accounts={accountCount} imports={importCount} valuedCount={valuation.data?.valued_holding_count ?? 0} totalCount={valuation.data?.holdings.length ?? 0} missingPrices={valuation.data?.missing_price_count ?? 0} />
         </section>
 
         {summary.isError && (

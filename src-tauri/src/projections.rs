@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::Connection;
 use rust_decimal::Decimal;
@@ -54,6 +54,37 @@ struct Position {
     asset_class: Option<String>,
     sector: Option<String>,
     geography: Option<String>,
+    applied_adjustments: BTreeSet<&'static str>,
+}
+
+// Some Trading 212 activity exports omit corporate-action rows while mixing
+// pre-action purchases with post-action sales. Keep verified adjustments here
+// until the broker supplies them in its export format.
+const VERIFIED_QUANTITY_ADJUSTMENTS: [(&str, &str, &str, i64, i64); 1] = [(
+    "contextlogic-2023-reverse-split",
+    "US21078F1093",
+    "2023-04-12",
+    1,
+    30,
+)];
+
+fn apply_verified_quantity_adjustments(
+    instrument_id: &str,
+    occurred_at: &str,
+    position: &mut Position,
+) {
+    for (id, adjusted_instrument, effective_date, numerator, denominator) in
+        VERIFIED_QUANTITY_ADJUSTMENTS
+    {
+        if instrument_id == adjusted_instrument
+            && occurred_at >= effective_date
+            && position.applied_adjustments.insert(id)
+        {
+            position.quantity = (position.quantity * Decimal::from(numerator)
+                / Decimal::from(denominator))
+            .round_dp(8);
+        }
+    }
 }
 
 fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
@@ -61,7 +92,7 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
         "SELECT e.account_id, a.display_name, a.broker, e.instrument_id, e.event_type,
                 e.amount_coefficient, e.amount_scale, e.currency,
                 e.quantity_coefficient, e.quantity_scale, i.symbol, i.name,
-                i.asset_class, i.sector, i.geography, e.description
+                i.asset_class, i.sector, i.geography, e.description, e.occurred_at
          FROM events e JOIN accounts a ON a.id = e.account_id
          LEFT JOIN instruments i ON i.id=e.instrument_id
          WHERE e.instrument_id IS NOT NULL AND e.event_type IN ('buy', 'sell', 'corporate_action')
@@ -84,13 +115,14 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
         let sector: Option<String> = row.get(13)?;
         let geography: Option<String> = row.get(14)?;
         let description: String = row.get(15)?;
+        let occurred_at: String = row.get(16)?;
         if quantity.is_zero() {
             continue;
         }
         let position = positions
             .entry((
                 account_id,
-                instrument_id,
+                instrument_id.clone(),
                 currency.clone().unwrap_or_default(),
             ))
             .or_insert_with(|| Position {
@@ -105,6 +137,7 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 geography,
                 ..Position::default()
             });
+        apply_verified_quantity_adjustments(&instrument_id, &occurred_at, position);
         if event_type == "corporate_action" {
             let description = description.to_lowercase();
             if description.contains("stock split open") {
@@ -355,4 +388,24 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
             .then(left.instrument_id.cmp(&right.instrument_id))
     });
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verified_reverse_split_normalizes_pre_split_quantity_once() {
+        let mut position = Position {
+            quantity: Decimal::from(5095),
+            ..Position::default()
+        };
+        apply_verified_quantity_adjustments("US21078F1093", "2024-02-21T19:26:36", &mut position);
+        assert_eq!(position.quantity.to_string(), "169.83333333");
+        apply_verified_quantity_adjustments("US21078F1093", "2025-06-02T14:45:45", &mut position);
+        assert_eq!(position.quantity.to_string(), "169.83333333");
+        position.quantity -= "0.83333333".parse::<Decimal>().expect("fractional sale");
+        position.quantity -= Decimal::from(169);
+        assert!(position.quantity.is_zero());
+    }
 }

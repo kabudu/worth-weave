@@ -226,6 +226,7 @@ async fn fetch_massive_candidate(
         let millis = ticker
             .and_then(|t| t.get("updated"))
             .and_then(Value::as_i64)
+            .filter(|value| *value > 0)
             .map(|n| {
                 if n > 10_000_000_000_000 {
                     n / 1_000_000

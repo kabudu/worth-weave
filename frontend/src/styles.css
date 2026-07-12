@@ -355,3 +355,9 @@ footer { font-size:10px; }
 @media(max-width:850px){.portfolio-browser{grid-template-columns:1fr;padding:0 16px 16px}.portfolio-tabs,.portfolio-search,.portfolio-browser>p,.portfolio-subtabs{grid-column:1;grid-row:auto}.portfolio-browser>p{margin:0}.portfolio-subtabs{overflow-x:auto;flex-wrap:nowrap}}
 .income-fx-note{display:flex;gap:12px;align-items:baseline;margin:0 0 14px;padding:13px 16px;border:1px solid rgba(20,76,58,.12);border-radius:12px;background:#eaf3ed;color:#40584e}.income-fx-note strong{flex:none;font-size:12px}.income-fx-note span{font-size:12px;line-height:1.5}
 @media(max-width:700px){.income-fx-note{display:grid;gap:4px}}
+
+@media(min-width:641px){
+  .app-shell{height:100vh;min-height:0;overflow:hidden}
+  .sidebar{height:100vh;min-height:0;overflow:hidden}
+  .app-shell>main{height:100vh;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+}

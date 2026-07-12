@@ -60,13 +60,78 @@ struct Position {
 // Some Trading 212 activity exports omit corporate-action rows while mixing
 // pre-action purchases with post-action sales. Keep verified adjustments here
 // until the broker supplies them in its export format.
-const VERIFIED_QUANTITY_ADJUSTMENTS: [(&str, &str, &str, i64, i64); 1] = [(
-    "contextlogic-2023-reverse-split",
-    "US21078F1093",
-    "2023-04-12",
-    1,
-    30,
-)];
+const VERIFIED_QUANTITY_ADJUSTMENTS: [(&str, &str, &str, i64, i64); 10] = [
+    (
+        "castor-2021-reverse-split",
+        "MHY1146L2082",
+        "2021-05-28",
+        1,
+        10,
+    ),
+    (
+        "comsovereign-2023-reverse-split",
+        "US2056504010",
+        "2023-02-10",
+        1,
+        100,
+    ),
+    (
+        "contextlogic-2023-reverse-split",
+        "US21078F1093",
+        "2023-04-12",
+        1,
+        30,
+    ),
+    (
+        "cinovec-2023-reverse-split",
+        "US1724063086",
+        "2023-06-09",
+        1,
+        20,
+    ),
+    (
+        "hepion-2023-reverse-split",
+        "US4268974015",
+        "2023-05-11",
+        1,
+        20,
+    ),
+    (
+        "pavmed-2023-reverse-split",
+        "US70387R5028",
+        "2023-12-07",
+        1,
+        15,
+    ),
+    (
+        "bimi-2022-reverse-split",
+        "US05552Q3011",
+        "2022-12-12",
+        1,
+        10,
+    ),
+    (
+        "bini-2025-june-reverse-split",
+        "US62526P8775",
+        "2025-06-02",
+        1,
+        100,
+    ),
+    (
+        "bini-2025-august-reverse-split",
+        "US62526P8775",
+        "2025-08-04",
+        1,
+        250,
+    ),
+    (
+        "bini-2025-september-reverse-split",
+        "US62526P8775",
+        "2025-09-22",
+        1,
+        250,
+    ),
+];
 
 fn apply_verified_quantity_adjustments(
     instrument_id: &str,
@@ -165,6 +230,9 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 position.quantity -= quantity;
             }
         }
+    }
+    for ((_, instrument_id, _), position) in &mut positions {
+        apply_verified_quantity_adjustments(instrument_id, "9999-12-31", position);
     }
     Ok(positions
         .into_iter()
@@ -407,5 +475,24 @@ mod tests {
         position.quantity -= "0.83333333".parse::<Decimal>().expect("fractional sale");
         position.quantity -= Decimal::from(169);
         assert!(position.quantity.is_zero());
+    }
+
+    #[test]
+    fn adjustment_after_final_transaction_is_applied_during_projection() {
+        let mut position = Position {
+            quantity: Decimal::from(105),
+            ..Position::default()
+        };
+        apply_verified_quantity_adjustments("US62526P8775", "9999-12-31", &mut position);
+        assert_eq!(position.quantity.to_string(), "0.0000168");
+    }
+
+    #[test]
+    fn adjustment_before_first_transaction_does_not_change_later_purchase() {
+        let mut position = Position::default();
+        apply_verified_quantity_adjustments("US05552Q3011", "2023-01-01", &mut position);
+        position.quantity += Decimal::from(12);
+        apply_verified_quantity_adjustments("US05552Q3011", "9999-12-31", &mut position);
+        assert_eq!(position.quantity, Decimal::from(12));
     }
 }

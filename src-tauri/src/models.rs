@@ -263,6 +263,20 @@ pub struct PortfolioSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct PerformancePoint {
+    pub date: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PerformanceHistory {
+    pub reporting_currency: String,
+    pub scope: String,
+    pub coverage: &'static str,
+    pub points: Vec<PerformancePoint>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AllocationSlice {
     pub label: String,
     pub value: String,

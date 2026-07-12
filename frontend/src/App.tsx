@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 
-import { getAccounts, getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution, refreshFxRates } from "./api";
+import { capturePortfolioSnapshot, getAccounts, getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution, refreshFxRates } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
@@ -76,6 +76,10 @@ export function App() {
   const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal), enabled: ready && activeView === "Activity" });
   const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal), enabled: ready && activeView === "Income" });
   const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal), enabled: ready && (activeView === "Overview" || activeView === "Portfolio") });
+  const autoSnapshot = useMutation({ mutationFn: capturePortfolioSnapshot, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["performance"] }) });
+  useEffect(() => {
+    if (valuation.data?.valuation_complete && autoSnapshot.isIdle) autoSnapshot.mutate();
+  }, [valuation.data?.valuation_complete, autoSnapshot]);
   const fxRefresh = useMutation({
     mutationFn: refreshFxRates,
     onSuccess: async () => {

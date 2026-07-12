@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { capturePortfolioSnapshot, type Account, type ActivityEvent, type AllocationReport, type CurrencyOption, type Holding, type IncomeSummary, type PortfolioSnapshot, type ReconciliationItem, type TotalReturnAttribution, type ValuationSummary } from "./api";
+import { capturePortfolioSnapshot, getPortfolioPerformance, type Account, type ActivityEvent, type AllocationReport, type CurrencyOption, type Holding, type IncomeSummary, type PerformanceHistory, type PortfolioSnapshot, type ReconciliationItem, type TotalReturnAttribution, type ValuationSummary } from "./api";
 import { MarketDataDialog } from "./MarketDataDialog";
 
 function money(value: string | null, currency: string | null, fractionDigits = 2) {
@@ -34,8 +34,11 @@ export function PortfolioView({ accounts, holdings, valuation, attribution, allo
   const [brokerFilter, setBrokerFilter] = useState<string>("all");
   const [accountFilter, setAccountFilter] = useState<string>("all");
   const [holdingSearch, setHoldingSearch] = useState("");
+  const [historyRange, setHistoryRange] = useState("All");
   const queryClient = useQueryClient();
   const snapshotMutation = useMutation({ mutationFn: capturePortfolioSnapshot, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["snapshots"] }) });
+  const historyScope = accountFilter !== "all" ? `account:${accountFilter}` : brokerFilter !== "all" ? `broker:${brokerFilter}` : "all";
+  const performance = useQuery({ queryKey: ["performance", historyScope], queryFn: ({ signal }) => getPortfolioPerformance(historyScope, signal) });
   const valued = new Map(valuation?.holdings.map((item) => [
     `${item.holding.account_id}-${item.holding.instrument_id}-${item.holding.currency}`,
     item,
@@ -59,11 +62,41 @@ export function PortfolioView({ accounts, holdings, valuation, attribution, allo
     {holdings.length === 0 ? <EmptyState title="No investments to show yet" copy="Import your account history to see what you own." /> : <><section className="portfolio-browser" aria-label="Browse investments"><div className="portfolio-tabs" role="tablist" aria-label="Provider"><button role="tab" aria-selected={brokerFilter === "all"} onClick={() => chooseBroker("all")}>All providers <span>{holdings.length}</span></button>{(["trading_212", "ibkr", "robinhood"] as const).filter((broker) => holdings.some((holding) => holding.broker === broker)).map((broker) => <button key={broker} role="tab" aria-selected={brokerFilter === broker} onClick={() => chooseBroker(broker)}>{brokerName(broker)} <span>{holdings.filter((holding) => holding.broker === broker).length}</span></button>)}</div><div className="portfolio-subtabs"><button className={accountFilter === "all" ? "active" : ""} onClick={() => setAccountFilter("all")}>All accounts</button>{visibleAccounts.filter((account) => holdings.some((holding) => holding.account_id === account.id)).map((account) => <button className={accountFilter === account.id ? "active" : ""} key={account.id} onClick={() => setAccountFilter(account.id)}>{account.display_name}<small>{account.account_type.replaceAll("_", " ")}</small></button>)}</div><label className="portfolio-search"><span>Search holdings</span><input type="search" value={holdingSearch} onChange={(event) => setHoldingSearch(event.target.value)} placeholder="Symbol, company or ISIN" /></label><p>{filteredHoldings.length} of {holdings.length} holdings</p></section>{filteredHoldings.length === 0 ? <EmptyState title="No matching investments" copy="Try another provider, account, or search term." /> : <div className={`report-table-wrap portfolio-content ${accountFilter !== "all" ? "single-account" : ""}`}><table><thead><tr><th>Investment</th>{accountFilter === "all" && <th>Account</th>}<th>Quantity</th><th>Average cost</th><th>Amount invested</th><th>Current value</th><th>Value in {reportingCurrency}</th><th>Gain / loss</th></tr></thead><tbody>{filteredHoldings.map((holding) => {
       const item = valued.get(`${holding.account_id}-${holding.instrument_id}-${holding.currency}`);
       return <tr key={`${holding.account_id}-${holding.instrument_id}-${holding.currency}`}><td><strong>{holding.symbol ?? holding.instrument_id}</strong><small>{holding.name ?? `${brokerName(holding.broker)} · ${holding.instrument_id}`}{item?.price?.stale ? " · stale price" : ""}</small></td>{accountFilter === "all" && <td>{holding.account_name}</td>}<td className="number">{holding.quantity}</td><td className="number">{holding.cost_basis_complete ? money(holding.average_cost, holding.currency, 4) : <span className="basis-warning" title="The broker-reported quantity is known, but an acquisition cost could not be reconstructed from the imported records.">Cost basis unavailable</span>}</td><td className="number">{holding.cost_basis_complete ? money(holding.cost_basis, holding.currency) : "—"}</td><td className="number">{money(item?.market_value ?? null, item?.price?.currency ?? null)}</td><td className="number">{money(item?.reporting_value ?? null, reportingCurrency)}</td><td className="number">{money(item?.gain_loss ?? null, reportingCurrency)}</td></tr>;
-    })}</tbody></table></div>}<section className="performance-card"><div><span className="section-kicker">Portfolio history</span><h2>Saved portfolio values</h2><p>{valuation?.valuation_complete ? "Save today’s total to track how your portfolio changes over time." : "Complete all missing prices before saving a portfolio value."}</p></div><div className="snapshot-chart">{snapshots.length === 0 ? <small>No saved values yet</small> : snapshots.slice(-12).map((snapshot) => <span key={snapshot.id} title={`${snapshot.captured_at}: ${snapshot.total_value} ${snapshot.reporting_currency}`} style={{ height: `${Math.max(12, Number(snapshot.total_value) / Math.max(...snapshots.map((item) => Number(item.total_value))) * 100)}%` }} />)}</div><button type="button" className="secondary-button" disabled={!valuation?.valuation_complete || snapshotMutation.isPending} onClick={() => snapshotMutation.mutate()}>{snapshotMutation.isPending ? "Saving…" : "Save today’s value"}</button>{snapshotMutation.isError && <small className="form-error">{String(snapshotMutation.error)}</small>}</section>{allocation && <section className="allocation-grid"><AllocationCard title="By broker" slices={allocation.by_platform} currency={allocation.reporting_currency} /><AllocationCard title="By account" slices={allocation.by_account} currency={allocation.reporting_currency} /><AllocationCard title="By investment type" slices={allocation.by_asset_class} currency={allocation.reporting_currency} /><AllocationCard title="By sector" slices={allocation.by_sector} currency={allocation.reporting_currency} /><AllocationCard title="By country or region" slices={allocation.by_geography} currency={allocation.reporting_currency} /><AllocationCard title="By currency" slices={allocation.by_currency} currency={allocation.reporting_currency} /></section>}</>}
+    })}</tbody></table></div>}<PerformanceChart history={performance.data} range={historyRange} onRange={setHistoryRange} scopeLabel={accountFilter !== "all" ? accounts.find((account) => account.id === accountFilter)?.display_name ?? "Account" : brokerFilter !== "all" ? brokerName(brokerFilter as Account["broker"]) : "Full portfolio"} loading={performance.isPending} /><button type="button" className="history-save" disabled={!valuation?.valuation_complete || snapshotMutation.isPending} onClick={() => snapshotMutation.mutate()}>{snapshotMutation.isPending ? "Saving…" : "Save today’s complete value"}</button>{snapshotMutation.isError && <small className="form-error">{String(snapshotMutation.error)}</small>}{allocation && <section className="allocation-grid"><AllocationCard title="By broker" slices={allocation.by_platform} currency={allocation.reporting_currency} /><AllocationCard title="By account" slices={allocation.by_account} currency={allocation.reporting_currency} /><AllocationCard title="By investment type" slices={allocation.by_asset_class} currency={allocation.reporting_currency} /><AllocationCard title="By sector" slices={allocation.by_sector} currency={allocation.reporting_currency} /><AllocationCard title="By country or region" slices={allocation.by_geography} currency={allocation.reporting_currency} /><AllocationCard title="By currency" slices={allocation.by_currency} currency={allocation.reporting_currency} /></section>}</>}
     <ReconciliationPanel items={reconciliation} />
     {historyChange !== null && <p className="history-change">Change since {firstSnapshot?.captured_at.slice(0, 10)}: <strong>{money(String(historyChange), reportingCurrency)}</strong></p>}
     <MarketDataDialog open={marketOpen} onClose={() => setMarketOpen(false)} holdings={holdings} currencies={currencies} reportingCurrency={reportingCurrency} />
   </section>;
+}
+
+const historyRanges = ["1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "All"];
+
+function PerformanceChart({ history, range, onRange, scopeLabel, loading }: { history?: PerformanceHistory; range: string; onRange: (range: string) => void; scopeLabel: string; loading: boolean }) {
+  const end = history?.points.at(-1) ? new Date(`${history.points.at(-1)?.date}T12:00:00`) : new Date();
+  const cutoff = new Date(end);
+  if (range === "1D") cutoff.setDate(cutoff.getDate() - 1);
+  else if (range === "5D") cutoff.setDate(cutoff.getDate() - 5);
+  else if (range === "1M") cutoff.setMonth(cutoff.getMonth() - 1);
+  else if (range === "6M") cutoff.setMonth(cutoff.getMonth() - 6);
+  else if (range === "YTD") cutoff.setMonth(0, 1);
+  else if (range === "1Y") cutoff.setFullYear(cutoff.getFullYear() - 1);
+  else if (range === "5Y") cutoff.setFullYear(cutoff.getFullYear() - 5);
+  const points = (history?.points ?? []).filter((point) => range === "All" || new Date(`${point.date}T12:00:00`) >= cutoff);
+  const values = points.map((point) => Number(point.value));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const spread = Math.max(max - min, max * .02, 1);
+  const coordinates = points.map((point, index) => ({
+    ...point,
+    x: points.length === 1 ? 50 : index / (points.length - 1) * 100,
+    y: 92 - ((Number(point.value) - min) / spread * 76),
+  }));
+  const line = coordinates.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
+  const area = coordinates.length ? `${line} L100,100 L0,100 Z` : "";
+  const first = values.at(0);
+  const latest = values.at(-1);
+  const change = first !== undefined && latest !== undefined ? latest - first : null;
+  return <section className="history-panel" aria-labelledby="portfolio-history-title"><div className="history-heading"><div><span className="section-kicker">Portfolio growth</span><h2 id="portfolio-history-title">{scopeLabel}</h2><p>{history?.coverage === "partial" ? "Partial broker history; some currency conversions are unavailable." : "Based on broker-reported historical position values."}</p></div><div><strong>{money(latest?.toString() ?? null, history?.reporting_currency ?? null)}</strong>{change !== null && <span className={change >= 0 ? "positive" : "negative"}>{change >= 0 ? "+" : ""}{money(change.toString(), history?.reporting_currency ?? null)}</span>}</div></div><div className="history-ranges" role="group" aria-label="Chart period">{historyRanges.map((item) => <button type="button" className={range === item ? "active" : ""} aria-pressed={range === item} key={item} onClick={() => onRange(item)}>{item}</button>)}</div><div className="area-chart">{loading ? <p>Loading portfolio history…</p> : coordinates.length < 2 ? <p>Re-import broker files to backfill historical valuations. Worthweave will keep adding complete values automatically.</p> : <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`${scopeLabel} value history`}><defs><linearGradient id="portfolio-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3cad78" stopOpacity=".42"/><stop offset="1" stopColor="#3cad78" stopOpacity=".03"/></linearGradient></defs><path d={area} fill="url(#portfolio-area)"/><path d={line} fill="none" stroke="#21845f" strokeWidth="1.7" vectorEffect="non-scaling-stroke"/>{coordinates.map((point) => <circle key={point.date} cx={point.x} cy={point.y} r="1.1"><title>{point.date}: {money(point.value, history?.reporting_currency ?? null)}</title></circle>)}</svg>}</div>{coordinates.length >= 2 && <div className="history-axis"><span>{coordinates.at(0)?.date}</span><span>{coordinates.at(-1)?.date}</span></div>}</section>;
 }
 
 function AttributionPanel({ report }: { report: TotalReturnAttribution }) {

@@ -618,6 +618,15 @@ fn fx(connection: &Connection, base: &str, quote: &str) -> Result<Option<(Decima
         .transpose()
 }
 
+pub(crate) fn convert_amount(
+    connection: &Connection,
+    amount: Decimal,
+    base: &str,
+    quote: &str,
+) -> Result<Option<Decimal>> {
+    Ok(fx(connection, base, quote)?.map(|(rate, _)| amount * rate))
+}
+
 pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
     let reporting_currency = db::settings(connection)?
         .reporting_currency
@@ -960,6 +969,10 @@ pub fn capture_snapshot(connection: &Connection) -> Result<PortfolioSnapshot> {
         reporting_currency: valuation.reporting_currency,
         total_value: total,
     };
+    connection.execute(
+        "DELETE FROM portfolio_snapshots WHERE substr(captured_at, 1, 10) = substr(?1, 1, 10)",
+        [&snapshot.captured_at],
+    )?;
     connection.execute(
         "INSERT INTO portfolio_snapshots (id, captured_at, reporting_currency, total_coefficient, total_scale)
          VALUES (?1, ?2, ?3, ?4, ?5)",

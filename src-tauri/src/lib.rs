@@ -150,6 +150,16 @@ fn portfolio_reconciliation(state: State<'_, AppState>) -> Result<Vec<Reconcilia
 }
 
 #[tauri::command]
+fn portfolio_performance_history(
+    scope: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<crate::models::PerformanceHistory> {
+    with_connection(&state, |connection| {
+        projections::performance_history(connection, scope.as_deref().unwrap_or("all"))
+    })
+}
+
+#[tauri::command]
 fn set_market_price(input: SetPriceInput, state: State<'_, AppState>) -> Result<PriceQuote> {
     with_connection(&state, |connection| market::set_price(connection, &input))
 }
@@ -351,6 +361,7 @@ pub fn run() {
             list_holdings,
             income_summary,
             portfolio_reconciliation,
+            portfolio_performance_history,
             set_market_price,
             set_fx_rate,
             refresh_fx_rates,

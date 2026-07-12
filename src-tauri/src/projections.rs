@@ -4,7 +4,9 @@ use rusqlite::Connection;
 use rust_decimal::Decimal;
 
 use crate::error::Result;
-use crate::models::{ActivityEvent, Holding, IncomeSummary, ReconciliationItem};
+use crate::models::{
+    ActivityEvent, Holding, IncomeSummary, PerformanceHistory, PerformancePoint, ReconciliationItem,
+};
 
 fn exact(coefficient: Option<String>, scale: Option<u32>) -> Option<Decimal> {
     let coefficient = coefficient?.parse::<i128>().ok()?;
@@ -408,6 +410,77 @@ pub fn income(connection: &Connection) -> Result<Vec<IncomeSummary>> {
             total: (dividends + interest).normalize().to_string(),
         })
         .collect())
+}
+
+pub fn performance_history(connection: &Connection, scope: &str) -> Result<PerformanceHistory> {
+    let reporting_currency = crate::db::settings(connection)?
+        .reporting_currency
+        .unwrap_or_else(|| "GBP".into());
+    let (filter, value) = if let Some(account_id) = scope.strip_prefix("account:") {
+        (" AND p.account_id = ?1", Some(account_id))
+    } else if let Some(broker) = scope.strip_prefix("broker:") {
+        (" AND a.broker = ?1", Some(broker))
+    } else {
+        ("", None)
+    };
+    let sql = format!(
+        "SELECT p.report_date, p.position_value_coefficient, p.position_value_scale, p.position_value_currency
+         FROM broker_position_snapshots p JOIN accounts a ON a.id=p.account_id
+         WHERE p.position_value_coefficient IS NOT NULL{filter}
+         ORDER BY p.report_date"
+    );
+    let mut statement = connection.prepare(&sql)?;
+    let mut totals: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut missing_conversion = false;
+    let mut consume = |row: &rusqlite::Row<'_>| -> rusqlite::Result<()> {
+        let date: String = row.get(0)?;
+        let coefficient: Option<String> = row.get(1)?;
+        let scale: Option<u32> = row.get(2)?;
+        let currency: Option<String> = row.get(3)?;
+        if let (Some(amount), Some(currency)) = (exact(coefficient, scale), currency) {
+            match crate::market::convert_amount(connection, amount, &currency, &reporting_currency)
+            {
+                Ok(Some(converted)) => *totals.entry(date).or_default() += converted,
+                _ => missing_conversion = true,
+            }
+        }
+        Ok(())
+    };
+    if let Some(value) = value {
+        let mut rows = statement.query([value])?;
+        while let Some(row) = rows.next()? {
+            consume(row)?;
+        }
+    } else {
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            consume(row)?;
+        }
+        let mut snapshots = connection.prepare(
+            "SELECT substr(captured_at, 1, 10), total_coefficient, total_scale, reporting_currency FROM portfolio_snapshots ORDER BY captured_at"
+        )?;
+        let mut rows = snapshots.query([])?;
+        while let Some(row) = rows.next()? {
+            consume(row)?;
+        }
+    }
+    let points = totals
+        .into_iter()
+        .map(|(date, value)| PerformancePoint {
+            date,
+            value: value.normalize().to_string(),
+        })
+        .collect();
+    Ok(PerformanceHistory {
+        reporting_currency,
+        scope: scope.into(),
+        coverage: if missing_conversion {
+            "partial"
+        } else {
+            "broker_imports"
+        },
+        points,
+    })
 }
 
 pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>> {

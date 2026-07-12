@@ -237,6 +237,9 @@ pub fn open(path: &Path) -> Result<Connection> {
         ("cost_basis_coefficient", "TEXT"),
         ("cost_basis_scale", "INTEGER"),
         ("cost_basis_currency", "TEXT"),
+        ("position_value_coefficient", "TEXT"),
+        ("position_value_scale", "INTEGER"),
+        ("position_value_currency", "TEXT"),
     ] {
         let exists = {
             let mut statement =

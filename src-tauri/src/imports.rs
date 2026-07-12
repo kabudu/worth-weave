@@ -57,6 +57,7 @@ struct PositionSnapshot {
     market_price: Option<ExactValue>,
     price_currency: Option<String>,
     cost_basis: Option<ExactValue>,
+    position_value: Option<ExactValue>,
 }
 
 fn parse_date(value: &str, context: &str) -> Result<(NaiveDate, String)> {
@@ -461,6 +462,11 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
                         &format!("CostBasisMoney at row {}", offset + 1),
                     )?
                     .map(|value| exact_value(value.abs(), None)),
+                    position_value: decimal(
+                        row.get("PositionValue").map(String::as_str),
+                        &format!("PositionValue at row {}", offset + 1),
+                    )?
+                    .map(|value| exact_value(value, None)),
                 });
             }
             continue;
@@ -709,20 +715,26 @@ pub fn import_csv(
             )?;
         }
         transaction.execute(
-            "INSERT INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale, cost_basis_coefficient, cost_basis_scale, cost_basis_currency)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            "INSERT INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale, cost_basis_coefficient, cost_basis_scale, cost_basis_currency, position_value_coefficient, position_value_scale, position_value_currency)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(account_id, report_date, instrument_id) DO UPDATE SET
                quantity_coefficient=excluded.quantity_coefficient,
                quantity_scale=excluded.quantity_scale,
                cost_basis_coefficient=excluded.cost_basis_coefficient,
                cost_basis_scale=excluded.cost_basis_scale,
-               cost_basis_currency=excluded.cost_basis_currency",
+               cost_basis_currency=excluded.cost_basis_currency,
+               position_value_coefficient=excluded.position_value_coefficient,
+               position_value_scale=excluded.position_value_scale,
+               position_value_currency=excluded.position_value_currency",
             params![
                 Uuid::new_v4().to_string(), account_id, batch_id,
                 position.report_date.to_string(), position.instrument_id,
                 position.quantity.coefficient, position.quantity.scale,
                 position.cost_basis.as_ref().map(|value| &value.coefficient),
                 position.cost_basis.as_ref().map(|value| value.scale),
+                position.price_currency,
+                position.position_value.as_ref().map(|value| &value.coefficient),
+                position.position_value.as_ref().map(|value| value.scale),
                 position.price_currency
             ],
         )?;
@@ -832,6 +844,13 @@ mod tests {
             parsed.positions[0].cost_basis,
             Some(ExactValue {
                 coefficient: "20".into(),
+                scale: 0
+            })
+        );
+        assert_eq!(
+            parsed.positions[0].position_value,
+            Some(ExactValue {
+                coefficient: "25".into(),
                 scale: 0
             })
         );

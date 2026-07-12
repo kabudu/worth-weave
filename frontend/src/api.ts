@@ -106,6 +106,10 @@ const totalReturnAttributionSchema = z.object({
 const portfolioSnapshotSchema = z.object({
   id: z.string().uuid(), captured_at: z.string(), reporting_currency: z.string(), total_value: exactString,
 });
+const performanceHistorySchema = z.object({
+  reporting_currency: z.string(), scope: z.string(), coverage: z.enum(["broker_imports", "partial"]),
+  points: z.array(z.object({ date: z.string(), value: exactString })),
+});
 const allocationReportSchema = z.object({
   reporting_currency: z.string(),
   by_account: z.array(z.object({ label: z.string(), value: exactString, percentage: exactString })),
@@ -128,6 +132,7 @@ export type IncomeSummary = z.infer<typeof incomeSummarySchema>;
 export type ValuationSummary = z.infer<typeof valuationSummarySchema>;
 export type TotalReturnAttribution = z.infer<typeof totalReturnAttributionSchema>;
 export type PortfolioSnapshot = z.infer<typeof portfolioSnapshotSchema>;
+export type PerformanceHistory = z.infer<typeof performanceHistorySchema>;
 export type AllocationReport = z.infer<typeof allocationReportSchema>;
 export type ReconciliationItem = z.infer<typeof reconciliationItemSchema>;
 const portfolioExplanationSchema = z.object({ answer: z.string().min(1), model: z.string(), generated_at: z.string() });
@@ -262,6 +267,11 @@ export async function updateInstrumentMetadata(input: { instrument_id: string; a
 export async function getPortfolioSnapshots(signal?: AbortSignal): Promise<PortfolioSnapshot[]> {
   signal?.throwIfAborted();
   return z.array(portfolioSnapshotSchema).parse(await invoke("list_portfolio_snapshots"));
+}
+
+export async function getPortfolioPerformance(scope: string, signal?: AbortSignal): Promise<PerformanceHistory> {
+  signal?.throwIfAborted();
+  return performanceHistorySchema.parse(await invoke("portfolio_performance_history", { scope }));
 }
 
 export async function capturePortfolioSnapshot(): Promise<PortfolioSnapshot> {

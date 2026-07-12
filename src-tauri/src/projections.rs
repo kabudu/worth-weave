@@ -286,7 +286,8 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
     let mut current = Vec::new();
     let mut statement = connection.prepare(
         "SELECT p.account_id, p.instrument_id, p.quantity_coefficient, p.quantity_scale,
-                a.display_name, a.broker, i.symbol, i.name, i.asset_class, i.sector, i.geography
+                a.display_name, a.broker, i.symbol, i.name, i.asset_class, i.sector, i.geography,
+                p.cost_basis_coefficient, p.cost_basis_scale, p.cost_basis_currency
          FROM broker_position_snapshots p
          JOIN accounts a ON a.id=p.account_id
          LEFT JOIN instruments i ON i.id=p.instrument_id
@@ -308,6 +309,8 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
             row.get::<_, Option<String>>(8)?,
             row.get::<_, Option<String>>(9)?,
             row.get::<_, Option<String>>(10)?,
+            exact(row.get(11)?, row.get(12)?),
+            row.get::<_, Option<String>>(13)?,
         ))
     })?;
     for row in rows {
@@ -322,6 +325,8 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
             asset_class,
             sector,
             geography,
+            broker_cost_basis,
+            broker_cost_currency,
         ) = row?;
         accounts_with_snapshots.insert(account_id.clone());
         if quantity.is_zero() {
@@ -329,7 +334,13 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
         }
         let key = (account_id.clone(), instrument_id.clone());
         if let Some(mut holding) = ledger_by_instrument.remove(&key) {
-            if holding.quantity.parse::<Decimal>().ok() != Some(quantity) {
+            if let (Some(cost_basis), Some(currency)) = (broker_cost_basis, broker_cost_currency) {
+                holding.cost_basis = Some(cost_basis.normalize().to_string());
+                holding.average_cost =
+                    (!quantity.is_zero()).then(|| (cost_basis / quantity).normalize().to_string());
+                holding.currency = Some(currency);
+                holding.cost_basis_complete = true;
+            } else if holding.quantity.parse::<Decimal>().ok() != Some(quantity) {
                 holding.cost_basis = None;
                 holding.average_cost = None;
                 holding.cost_basis_complete = false;
@@ -348,10 +359,12 @@ pub fn holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 sector,
                 geography,
                 quantity: quantity.normalize().to_string(),
-                cost_basis: None,
-                average_cost: None,
-                currency: None,
-                cost_basis_complete: false,
+                cost_basis: broker_cost_basis.map(|value| value.normalize().to_string()),
+                average_cost: broker_cost_basis.and_then(|value| {
+                    (!quantity.is_zero()).then(|| (value / quantity).normalize().to_string())
+                }),
+                currency: broker_cost_currency,
+                cost_basis_complete: broker_cost_basis.is_some(),
             });
         }
     }

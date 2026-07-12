@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn latest_broker_snapshot_controls_current_quantity_without_inventing_cost_basis() {
+    fn latest_broker_snapshot_controls_quantity_and_supplies_cost_basis() {
         let directory = tempdir().expect("temp directory");
         let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
         let account = db::create_account(
@@ -681,8 +681,12 @@ mod tests {
         let holdings = projections::holdings(&connection).expect("holdings");
         assert_eq!(holdings.len(), 1);
         assert_eq!(holdings[0].quantity, "3");
-        assert!(!holdings[0].cost_basis_complete);
-        assert!(holdings[0].cost_basis.is_none());
+        assert!(holdings[0].cost_basis_complete);
+        assert_eq!(holdings[0].cost_basis.as_deref(), Some("25"));
+        assert_eq!(
+            holdings[0].average_cost.as_deref(),
+            Some("8.333333333333333333333333333")
+        );
         let reconciliation = projections::reconciliation(&connection).expect("reconciliation");
         assert_eq!(reconciliation[0].status, "mismatch");
         assert_eq!(reconciliation[0].difference.as_deref(), Some("-1"));

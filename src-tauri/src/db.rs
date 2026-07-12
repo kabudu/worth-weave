@@ -233,6 +233,26 @@ pub fn open(path: &Path) -> Result<Connection> {
             ))?;
         }
     }
+    for (column, definition) in [
+        ("cost_basis_coefficient", "TEXT"),
+        ("cost_basis_scale", "INTEGER"),
+        ("cost_basis_currency", "TEXT"),
+    ] {
+        let exists = {
+            let mut statement =
+                connection.prepare("PRAGMA table_info(broker_position_snapshots)")?;
+            statement
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+                .iter()
+                .any(|name| name == column)
+        };
+        if !exists {
+            connection.execute_batch(&format!(
+                "ALTER TABLE broker_position_snapshots ADD COLUMN {column} {definition}"
+            ))?;
+        }
+    }
     let has_account_jurisdiction = {
         let mut statement = connection.prepare("PRAGMA table_info(accounts)")?;
         statement

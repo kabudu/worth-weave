@@ -56,6 +56,7 @@ struct PositionSnapshot {
     asset_class: Option<String>,
     market_price: Option<ExactValue>,
     price_currency: Option<String>,
+    cost_basis: Option<ExactValue>,
 }
 
 fn parse_date(value: &str, context: &str) -> Result<(NaiveDate, String)> {
@@ -455,6 +456,11 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
                         .get("CurrencyPrimary")
                         .map(|value| value.trim().to_uppercase())
                         .filter(|value| !value.is_empty()),
+                    cost_basis: decimal(
+                        row.get("CostBasisMoney").map(String::as_str),
+                        &format!("CostBasisMoney at row {}", offset + 1),
+                    )?
+                    .map(|value| exact_value(value.abs(), None)),
                 });
             }
             continue;
@@ -703,15 +709,21 @@ pub fn import_csv(
             )?;
         }
         transaction.execute(
-            "INSERT INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO broker_position_snapshots (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale, cost_basis_coefficient, cost_basis_scale, cost_basis_currency)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(account_id, report_date, instrument_id) DO UPDATE SET
                quantity_coefficient=excluded.quantity_coefficient,
-               quantity_scale=excluded.quantity_scale",
+               quantity_scale=excluded.quantity_scale,
+               cost_basis_coefficient=excluded.cost_basis_coefficient,
+               cost_basis_scale=excluded.cost_basis_scale,
+               cost_basis_currency=excluded.cost_basis_currency",
             params![
                 Uuid::new_v4().to_string(), account_id, batch_id,
                 position.report_date.to_string(), position.instrument_id,
-                position.quantity.coefficient, position.quantity.scale
+                position.quantity.coefficient, position.quantity.scale,
+                position.cost_basis.as_ref().map(|value| &value.coefficient),
+                position.cost_basis.as_ref().map(|value| value.scale),
+                position.price_currency
             ],
         )?;
     }
@@ -816,6 +828,13 @@ mod tests {
         let parsed = parse_ibkr(b"ClientAccountID,CurrencyPrimary,ReportDate,Quantity,MarkPrice,PositionValue,CostBasisMoney,LevelOfDetail,ISIN,Conid\nU1,GBP,2026-07-10,2.5,10,25,20,Summary,GB00TEST0001,123\n").expect("valid position section");
         assert_eq!(parsed.positions.len(), 1);
         assert_eq!(parsed.positions[0].instrument_id, "GB00TEST0001");
+        assert_eq!(
+            parsed.positions[0].cost_basis,
+            Some(ExactValue {
+                coefficient: "20".into(),
+                scale: 0
+            })
+        );
         assert_eq!(
             parsed.positions[0].quantity,
             ExactValue {

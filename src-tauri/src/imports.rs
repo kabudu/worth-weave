@@ -330,6 +330,8 @@ fn ibkr_type(section: &str, row: &HashMap<String, String>) -> &'static str {
     .to_lowercase();
     if label.contains("tax") || label.contains("withholding") {
         "tax"
+    } else if label.contains(" split ") || label.contains("cusip/isin change") {
+        "corporate_action"
     } else if label.contains("dividend") {
         "dividend"
     } else if label.contains("deposit") {
@@ -797,6 +799,16 @@ mod tests {
                 scale: 2
             })
         );
+    }
+
+    #[test]
+    fn ibkr_parser_recognizes_described_splits_as_corporate_actions() {
+        let mut row = HashMap::new();
+        row.insert(
+            "Description".to_owned(),
+            "SRXH(US08771Y4026) SPLIT 1 FOR 60".to_owned(),
+        );
+        assert_eq!(ibkr_type("unknown", &row), "corporate_action");
     }
 
     #[test]

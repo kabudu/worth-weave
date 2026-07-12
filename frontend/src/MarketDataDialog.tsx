@@ -38,7 +38,7 @@ export function MarketDataDialog({ open, onClose, holdings, currencies, reportin
   function submitMetadata(event: FormEvent) { event.preventDefault(); metadataMutation.mutate({ instrument_id: effectiveInstrument, asset_class: effectiveAssetClass, sector: effectiveSector, geography: effectiveGeography }); }
   function selectInstrument(value: string) { setInstrument(value); setAssetClass(null); setSector(null); setGeography(null); }
   const instrumentOptions = holdings.map((holding) => ({ value: holding.instrument_id, label: holding.symbol ?? holding.instrument_id, detail: holding.account_name }));
-  const instrumentSelect = <label>Investment<SearchSelect ariaLabel="Search investments" value={effectiveInstrument} options={instrumentOptions} onChange={selectInstrument} placeholder="Search by symbol or account" /></label>;
+  const instrumentSelect = <label>Investment<SearchSelect key={effectiveInstrument} ariaLabel="Search investments" value={effectiveInstrument} options={instrumentOptions} onChange={selectInstrument} placeholder="Search by symbol or account" /></label>;
   return <dialog ref={dialogRef} className="market-dialog" onClose={onClose}>
     <div className="dialog-topline"><div><span className="section-kicker">Update your figures</span><h2>Prices, exchange rates &amp; categories</h2></div><button type="button" className="dialog-close" onClick={onClose} aria-label="Close market data">×</button></div>
     <section className="market-provider"><h3>Automatic US stock prices</h3><p>Optional Massive integration. Your API key is stored in macOS Keychain. Worthweave sends unresolved ticker symbols to Massive only when you click refresh; Stocks Starter quotes are 15-minute delayed.</p>

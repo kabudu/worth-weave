@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 export type SearchSelectOption = { value: string; label: string; detail?: string };
 
@@ -10,7 +10,6 @@ export function SearchSelect({ value, options, onChange, placeholder = "Searchâ€
   const selected = options.find((option) => option.value === value);
   const selectedLabel = selected ? `${selected.label}${selected.detail ? ` Â· ${selected.detail}` : ""}` : "";
   const [query, setQuery] = useState(selectedLabel);
-  useEffect(() => setQuery(selectedLabel), [selectedLabel]);
   return <div className="search-select">
     <input aria-label={ariaLabel} list={listId} value={query === selectedLabel ? selectedLabel : query} placeholder={placeholder}
       onFocus={(event) => event.currentTarget.select()}

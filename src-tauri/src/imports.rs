@@ -332,7 +332,7 @@ fn ibkr_type(section: &str, row: &HashMap<String, String>) -> &'static str {
     .to_lowercase();
     if label.contains("tax") || label.contains("withholding") {
         "tax"
-    } else if label.contains(" split ") || label.contains("cusip/isin change") {
+    } else if label.contains("split") || label.contains("cusip/isin change") {
         "corporate_action"
     } else if label.contains("dividend") {
         "dividend"
@@ -831,6 +831,12 @@ mod tests {
         row.insert(
             "Description".to_owned(),
             "SRXH(US08771Y4026) SPLIT 1 FOR 60".to_owned(),
+        );
+        assert_eq!(ibkr_type("unknown", &row), "corporate_action");
+
+        row.insert(
+            "Description".into(),
+            "AGEN(US00847G7051) SPLIT 1 FOR 20".into(),
         );
         assert_eq!(ibkr_type("unknown", &row), "corporate_action");
     }

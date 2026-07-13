@@ -157,6 +157,31 @@ fn apply_verified_quantity_adjustments(
     }
 }
 
+fn is_position_corporate_action(event_type: &str, description: &str) -> bool {
+    if event_type == "corporate_action" {
+        return true;
+    }
+    let description = description.to_ascii_lowercase();
+    event_type == "other"
+        && (description.contains("split") || description.contains("cusip/isin change"))
+}
+
+fn predecessor_instrument_id(description: &str, current_instrument_id: &str) -> Option<String> {
+    description
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .find(|candidate| {
+            candidate.len() == 12
+                && *candidate != current_instrument_id
+                && candidate.as_bytes()[..2]
+                    .iter()
+                    .all(u8::is_ascii_alphabetic)
+                && candidate.as_bytes()[2..]
+                    .iter()
+                    .all(u8::is_ascii_alphanumeric)
+        })
+        .map(str::to_owned)
+}
+
 fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
     let mut statement = connection.prepare(
         "SELECT e.account_id, a.display_name, a.broker, e.instrument_id, e.event_type,
@@ -165,8 +190,16 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 i.asset_class, i.sector, i.geography, e.description, e.occurred_at
          FROM events e JOIN accounts a ON a.id = e.account_id
          LEFT JOIN instruments i ON i.id=e.instrument_id
-         WHERE e.instrument_id IS NOT NULL AND e.event_type IN ('buy', 'sell', 'corporate_action')
-         ORDER BY e.occurred_at, e.id",
+         WHERE e.instrument_id IS NOT NULL AND (
+             e.event_type IN ('buy', 'sell', 'transfer', 'corporate_action')
+             OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
+         )
+         ORDER BY e.occurred_at,
+           CASE WHEN e.event_type='corporate_action'
+                  OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
+             THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
+             ELSE 0 END,
+           e.id",
     )?;
     let mut rows = statement.query([])?;
     let mut positions: BTreeMap<(String, String, String), Position> = BTreeMap::new();
@@ -177,7 +210,8 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
         let instrument_id: String = row.get(3)?;
         let event_type: String = row.get(4)?;
         let amount = exact(row.get(5)?, row.get(6)?).unwrap_or_default().abs();
-        let quantity = exact(row.get(8)?, row.get(9)?).unwrap_or_default().abs();
+        let raw_quantity = exact(row.get(8)?, row.get(9)?).unwrap_or_default();
+        let quantity = raw_quantity.abs();
         let currency: Option<String> = row.get(7)?;
         let symbol: Option<String> = row.get(10)?;
         let name: Option<String> = row.get(11)?;
@@ -188,6 +222,34 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
         let occurred_at: String = row.get(16)?;
         if quantity.is_zero() {
             continue;
+        }
+        let is_corporate_action = is_position_corporate_action(&event_type, &description);
+        if is_corporate_action
+            && let Some(predecessor_id) = predecessor_instrument_id(&description, &instrument_id)
+        {
+            let predecessor_key = (
+                account_id.clone(),
+                predecessor_id,
+                currency.clone().unwrap_or_default(),
+            );
+            if let Some(mut predecessor) = positions.remove(&predecessor_key) {
+                // IBKR's action row reports the exact post-action quantity. Carry the
+                // economic cost history to the new identifier, but trust that quantity
+                // rather than trying to infer fractional-share treatment.
+                predecessor.quantity = quantity;
+                predecessor.symbol = symbol.clone().or(predecessor.symbol);
+                predecessor.name = name.clone().or(predecessor.name);
+                predecessor.asset_class = asset_class.clone().or(predecessor.asset_class);
+                positions.insert(
+                    (
+                        account_id.clone(),
+                        instrument_id.clone(),
+                        currency.clone().unwrap_or_default(),
+                    ),
+                    predecessor,
+                );
+                continue;
+            }
         }
         let position = positions
             .entry((
@@ -208,7 +270,7 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 ..Position::default()
             });
         apply_verified_quantity_adjustments(&instrument_id, &occurred_at, position);
-        if event_type == "corporate_action" {
+        if is_corporate_action {
             let description = description.to_lowercase();
             if description.contains("stock split open") {
                 position.quantity += quantity;
@@ -217,9 +279,20 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
                     position.basis_complete = false;
                 }
                 position.quantity -= quantity;
+            } else if description.contains("split") || description.contains("cusip/isin change") {
+                // A standalone IBKR action row contains the resulting quantity even when
+                // the predecessor activity falls outside the export. It is authoritative
+                // for quantity, but cannot establish historical cost by itself.
+                position.quantity = quantity;
+                position.basis_complete = false;
             } else {
                 position.basis_complete = false;
             }
+        } else if event_type == "transfer" {
+            position.quantity += raw_quantity;
+            // Transfers establish quantity but generally do not carry acquisition cost in
+            // the activity section. The latest broker snapshot can still supply that basis.
+            position.basis_complete = false;
         } else if event_type == "buy" {
             position.quantity += quantity;
             position.cost_basis += amount;
@@ -472,11 +545,16 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
                   WHEN e.event_type='corporate_action' AND lower(e.description) LIKE '%stock split close%' THEN -ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
                   WHEN e.event_type='corporate_action' AND lower(e.description) LIKE '%stock split open%' THEN ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
                   WHEN e.event_type='corporate_action' THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
+                  WHEN e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%')
+                    THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
                   ELSE 0 END) AS quantity
          FROM historical_prices hp
          JOIN events e ON e.instrument_id=hp.instrument_id AND substr(e.occurred_at,1,10)<=hp.price_date
          JOIN accounts a ON a.id=e.account_id
-         WHERE e.quantity_coefficient IS NOT NULL AND e.event_type IN ('buy','sell','transfer','corporate_action')
+         WHERE e.quantity_coefficient IS NOT NULL AND (
+             e.event_type IN ('buy','sell','transfer','corporate_action')
+             OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
+         )
            AND NOT EXISTS (SELECT 1 FROM broker_position_snapshots bp
              WHERE bp.account_id=e.account_id AND bp.report_date=hp.price_date
                AND bp.position_value_coefficient IS NOT NULL)
@@ -616,6 +694,56 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
 mod tests {
     use super::*;
 
+    fn projection_connection() -> Connection {
+        let connection = Connection::open_in_memory().expect("in-memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE accounts (id TEXT PRIMARY KEY, display_name TEXT, broker TEXT);
+                 CREATE TABLE instruments (id TEXT PRIMARY KEY, symbol TEXT, name TEXT, asset_class TEXT, sector TEXT, geography TEXT);
+                 CREATE TABLE events (
+                   id TEXT PRIMARY KEY, account_id TEXT, instrument_id TEXT, event_type TEXT,
+                   amount_coefficient TEXT, amount_scale INTEGER, currency TEXT,
+                   quantity_coefficient TEXT, quantity_scale INTEGER, description TEXT,
+                   occurred_at TEXT
+                 );
+                 INSERT INTO accounts VALUES ('account', 'IBKR ISA', 'ibkr');",
+            )
+            .expect("projection schema");
+        connection
+    }
+
+    fn add_event(
+        connection: &Connection,
+        id: &str,
+        instrument_id: &str,
+        event_type: &str,
+        quantity: &str,
+        description: &str,
+        occurred_at: &str,
+    ) {
+        let quantity = quantity.parse::<Decimal>().expect("decimal quantity");
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO instruments (id, symbol) VALUES (?1, ?1)",
+                [instrument_id],
+            )
+            .expect("instrument");
+        connection
+            .execute(
+                "INSERT INTO events VALUES (?1, 'account', ?2, ?3, NULL, NULL, 'USD', ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    id,
+                    instrument_id,
+                    event_type,
+                    quantity.mantissa().to_string(),
+                    quantity.scale(),
+                    description,
+                    occurred_at
+                ],
+            )
+            .expect("event");
+    }
+
     #[test]
     fn verified_reverse_split_normalizes_pre_split_quantity_once() {
         let mut position = Position {
@@ -648,5 +776,71 @@ mod tests {
         position.quantity += Decimal::from(12);
         apply_verified_quantity_adjustments("US05552Q3011", "9999-12-31", &mut position);
         assert_eq!(position.quantity, Decimal::from(12));
+    }
+
+    #[test]
+    fn transfers_and_ibkr_identifier_changes_reconcile_to_resulting_quantity() {
+        let connection = projection_connection();
+        add_event(
+            &connection,
+            "transfer",
+            "US00847G7051",
+            "transfer",
+            "811",
+            "AGENUS INC",
+            "2024-03-18",
+        );
+        add_event(
+            &connection,
+            "old-leg",
+            "US00847G7051",
+            "other",
+            "-971",
+            "AGEN(US00847G7051) SPLIT 1 FOR 20 (AGEN.OLD, AGENUS INC, US00847G7051)",
+            "2024-04-11",
+        );
+        add_event(
+            &connection,
+            "new-leg",
+            "US00847G8042",
+            "other",
+            "48.55",
+            "AGEN(US00847G7051) SPLIT 1 FOR 20 (AGEN, AGENUS INC, US00847G8042)",
+            "2024-04-11",
+        );
+        add_event(
+            &connection,
+            "fractional-sale",
+            "US00847G8042",
+            "sell",
+            "-0.55",
+            "AGENUS INC",
+            "2024-04-11T20:26:00",
+        );
+
+        let holdings = ledger_holdings(&connection).expect("holdings");
+        assert_eq!(
+            holdings.len(),
+            1,
+            "{:#?}",
+            holdings
+                .iter()
+                .map(|holding| (&holding.instrument_id, &holding.quantity))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(holdings[0].instrument_id, "US00847G8042");
+        assert_eq!(holdings[0].quantity, "48");
+    }
+
+    #[test]
+    fn predecessor_parser_ignores_current_identifier() {
+        assert_eq!(
+            predecessor_instrument_id(
+                "LITM(CA83336J3073) CUSIP/ISIN CHANGE TO (CA3591341035)",
+                "CA3591341035"
+            )
+            .as_deref(),
+            Some("CA83336J3073")
+        );
     }
 }

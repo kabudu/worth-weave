@@ -7,6 +7,9 @@ mod market;
 mod models;
 mod projections;
 
+use std::collections::BTreeMap;
+use std::str::FromStr;
+
 use db::AppState;
 use error::{Result, WorthweaveError};
 use models::{
@@ -18,6 +21,123 @@ use models::{
     UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
+
+fn ai_portfolio_context(connection: &rusqlite::Connection) -> Result<serde_json::Value> {
+    let valuation = market::valuation(connection)?;
+    let valued_total = valuation
+        .total_value
+        .as_deref()
+        .and_then(|value| rust_decimal::Decimal::from_str(value).ok())
+        .unwrap_or_default();
+    let mut ranked = valuation
+        .holdings
+        .iter()
+        .filter_map(|item| {
+            let value = rust_decimal::Decimal::from_str(item.reporting_value.as_deref()?).ok()?;
+            Some((value, item))
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|(left, _), (right, _)| right.cmp(left));
+    let top_holdings = ranked
+        .iter()
+        .take(12)
+        .enumerate()
+        .map(|(index, (value, item))| {
+            let percentage = if valued_total > rust_decimal::Decimal::ZERO {
+                (*value / valued_total * rust_decimal::Decimal::from(100)).round_dp(2)
+            } else {
+                rust_decimal::Decimal::ZERO
+            };
+            serde_json::json!({
+                "rank": index + 1,
+                "symbol": item.holding.symbol,
+                "name": item.holding.name,
+                "account": item.holding.account_name,
+                "broker": item.holding.broker,
+                "reporting_value": value.normalize().to_string(),
+                "percentage_of_valued_portfolio": percentage.normalize().to_string(),
+                "price_is_stale": item.price.as_ref().is_some_and(|price| price.stale),
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut account_values: BTreeMap<(String, String), rust_decimal::Decimal> = BTreeMap::new();
+    for (value, item) in &ranked {
+        *account_values
+            .entry((
+                item.holding.account_name.clone(),
+                item.holding.broker.clone(),
+            ))
+            .or_default() += *value;
+    }
+    let mut account_breakdown = account_values
+        .into_iter()
+        .map(|((account, broker), value)| {
+            let percentage = if valued_total > rust_decimal::Decimal::ZERO {
+                (value / valued_total * rust_decimal::Decimal::from(100)).round_dp(2)
+            } else {
+                rust_decimal::Decimal::ZERO
+            };
+            serde_json::json!({
+                "account": account,
+                "broker": broker,
+                "reporting_value": value.normalize().to_string(),
+                "percentage_of_valued_portfolio": percentage.normalize().to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+    account_breakdown.sort_by(|left, right| {
+        let parse = |value: &serde_json::Value| {
+            value["reporting_value"]
+                .as_str()
+                .and_then(|number| rust_decimal::Decimal::from_str(number).ok())
+                .unwrap_or_default()
+        };
+        parse(right).cmp(&parse(left))
+    });
+    let reconciliation = projections::reconciliation(connection)?;
+    let mut reconciliation_statuses = BTreeMap::<&str, usize>::new();
+    for item in &reconciliation {
+        *reconciliation_statuses.entry(item.status).or_default() += 1;
+    }
+    let snapshots = market::snapshots(connection)?;
+    Ok(serde_json::json!({
+        "scope": {
+            "description": "All imported accounts in Worthweave; no account filter is applied",
+            "accounts": account_breakdown,
+            "reporting_currency": valuation.reporting_currency,
+        },
+        "current_valuation": {
+            "valued_total": valuation.total_value,
+            "valuation_complete": valuation.valuation_complete,
+            "total_current_holdings": valuation.holdings.len(),
+            "valued_holdings": valuation.valued_holding_count,
+            "holdings_missing_prices": valuation.missing_price_count,
+            "holdings_missing_fx": valuation.missing_fx_count,
+            "stale_prices": valuation.stale_price_count,
+        },
+        "ranked_holdings": {
+            "denominator": "valued_total across all imported accounts",
+            "top": top_holdings,
+            "remaining_valued_holdings_not_listed": ranked.len().saturating_sub(12),
+        },
+        "total_return_attribution": market::total_return_attribution(connection)?,
+        "income": projections::income(connection)?,
+        "cost_history_coverage": {
+            "positions": reconciliation.len(),
+            "statuses": reconciliation_statuses,
+        },
+        "saved_valuation_history": {
+            "first": snapshots.first(),
+            "latest": snapshots.last(),
+        },
+        "interpretation_rules": [
+            "The supplied percentages are authoritative and already calculated across all valued accounts.",
+            "Never call a holding or account a majority unless its supplied percentage exceeds 50.",
+            "Do not infer percentages from quantities, the number of listed rows, or missing values.",
+            "If valuation_complete is false, describe concentration as a percentage of the valued portfolio only."
+        ]
+    }))
+}
 
 fn with_connection<T>(
     state: &State<'_, AppState>,
@@ -130,14 +250,7 @@ async fn explain_portfolio(
         let runtime = settings.ai_runtime.ok_or_else(|| {
             WorthweaveError::LocalAi("local AI is not configured in Settings".into())
         })?;
-        let analytics = serde_json::json!({
-            "valuation": market::valuation(connection)?,
-            "total_return_attribution": market::total_return_attribution(connection)?,
-            "allocation": market::allocation(connection).ok(),
-            "reconciliation": projections::reconciliation(connection)?,
-            "income": projections::income(connection)?,
-            "snapshots": market::snapshots(connection)?,
-        });
+        let analytics = ai_portfolio_context(connection)?;
         Ok((runtime, endpoint, model, analytics.to_string()))
     })?;
     ai::explain(&runtime, &endpoint, &model, &input.question, &analytics).await
@@ -436,6 +549,28 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn private_ai_context_declares_full_scope_and_authoritative_percentages() {
+        let directory = tempdir().expect("temp directory");
+        let connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        let context = ai_portfolio_context(&connection).expect("AI context");
+        assert_eq!(
+            context["scope"]["description"],
+            "All imported accounts in Worthweave; no account filter is applied"
+        );
+        assert_eq!(
+            context["ranked_holdings"]["denominator"],
+            "valued_total across all imported accounts"
+        );
+        assert!(
+            context["interpretation_rules"]
+                .as_array()
+                .is_some_and(|rules| rules.iter().any(|rule| rule
+                    .as_str()
+                    .is_some_and(|text| text.contains("exceeds 50"))))
+        );
+    }
 
     #[test]
     fn database_starts_empty_and_persists_accounts() {

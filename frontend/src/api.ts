@@ -123,7 +123,7 @@ const reconciliationItemSchema = z.object({
   account_id: z.string().uuid(), account_name: z.string(), instrument_id: z.string(),
   as_of: z.string().nullable(), ledger_quantity: exactString,
   broker_quantity: exactString.nullable(), difference: exactString.nullable(),
-  status: z.enum(["matched", "mismatch", "unavailable"]),
+  status: z.enum(["matched", "broker_basis", "mismatch", "unavailable"]),
 });
 
 export type ActivityEvent = z.infer<typeof activityEventSchema>;

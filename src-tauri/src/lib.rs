@@ -721,7 +721,7 @@ mod tests {
             Some("8.333333333333333333333333333")
         );
         let reconciliation = projections::reconciliation(&connection).expect("reconciliation");
-        assert_eq!(reconciliation[0].status, "mismatch");
+        assert_eq!(reconciliation[0].status, "broker_basis");
         assert_eq!(reconciliation[0].difference.as_deref(), Some("-1"));
     }
 

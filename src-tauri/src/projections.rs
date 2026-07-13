@@ -199,6 +199,9 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
          ORDER BY e.occurred_at,
            CASE WHEN e.event_type='corporate_action'
                   OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
+             THEN 0 ELSE 1 END,
+           CASE WHEN e.event_type='corporate_action'
+                  OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
              THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
              ELSE 0 END,
            e.id",
@@ -777,7 +780,8 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
         .collect();
     let mut statement = connection.prepare(
         "SELECT p.account_id, p.instrument_id, p.report_date, a.display_name,
-                p.quantity_coefficient, p.quantity_scale
+                p.quantity_coefficient, p.quantity_scale,
+                p.cost_basis_coefficient, p.cost_basis_scale
          FROM broker_position_snapshots p
          JOIN accounts a ON a.id=p.account_id
          JOIN (
@@ -792,12 +796,14 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 exact(row.get(4)?, row.get(5)?).unwrap_or_default(),
+                exact(row.get(6)?, row.get(7)?),
             ),
         ))
     })?;
     let mut result = Vec::new();
     for row in rows {
-        let ((account_id, instrument_id), (date, account_name, broker_quantity)) = row?;
+        let ((account_id, instrument_id), (date, account_name, broker_quantity, broker_basis)) =
+            row?;
         if broker_quantity.is_zero() {
             continue;
         }
@@ -807,6 +813,7 @@ pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>
         let difference = ledger_quantity.map(|quantity| quantity - broker_quantity);
         let status = match difference {
             Some(value) if value.is_zero() => "matched",
+            _ if broker_basis.is_some() => "broker_basis",
             Some(_) => "mismatch",
             None => "unavailable",
         };
@@ -989,6 +996,55 @@ mod tests {
             .as_deref(),
             Some("CA83336J3073")
         );
+    }
+
+    #[test]
+    fn split_result_is_applied_before_same_timestamp_fractional_sale() {
+        let connection = projection_connection();
+        add_event(
+            &connection,
+            "fractional-sale",
+            "US00847G8042",
+            "sell",
+            "-0.55",
+            "AGENUS INC",
+            "2024-04-11T20:25:00",
+        );
+        add_event(
+            &connection,
+            "split-result",
+            "US00847G8042",
+            "other",
+            "48.55",
+            "AGEN(US00847G7051) SPLIT 1 FOR 20 (AGEN, AGENUS INC, US00847G8042)",
+            "2024-04-11T20:25:00",
+        );
+
+        let holdings = ledger_holdings(&connection).expect("holdings");
+        assert_eq!(holdings.len(), 1);
+        assert_eq!(holdings[0].quantity, "48");
+    }
+
+    #[test]
+    fn broker_reported_basis_covers_current_cost_when_activity_is_incomplete() {
+        let connection = projection_connection();
+        connection
+            .execute(
+                "INSERT INTO instruments (id, symbol) VALUES ('US4268974015', 'HEPA')",
+                [],
+            )
+            .expect("instrument");
+        connection.execute(
+            "INSERT INTO broker_position_snapshots (account_id, report_date, instrument_id, quantity_coefficient, quantity_scale, cost_basis_coefficient, cost_basis_scale, cost_basis_currency) VALUES ('account', '2026-07-10', 'US4268974015', '5', 0, '0', 0, 'USD')",
+            [],
+        ).expect("broker position");
+
+        let items = reconciliation(&connection).expect("reconciliation");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].status, "broker_basis");
+        let current = holdings(&connection).expect("holdings");
+        assert_eq!(current[0].cost_basis.as_deref(), Some("0"));
+        assert!(current[0].cost_basis_complete);
     }
 
     #[test]

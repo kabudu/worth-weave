@@ -536,7 +536,8 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
         }
     }
     let mut reconstructed_statement = connection.prepare(
-        "SELECT hp.price_date, hp.price_coefficient, hp.price_scale, hp.currency,
+        "WITH dates AS (SELECT DISTINCT price_date FROM historical_prices)
+         SELECT dates.price_date, hp.price_coefficient, hp.price_scale, hp.currency,
                 e.account_id, a.broker,
                 SUM(CASE
                   WHEN e.event_type='buy' THEN ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
@@ -548,19 +549,23 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
                   WHEN e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%')
                     THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
                   ELSE 0 END) AS quantity
-         FROM historical_prices hp
-         JOIN events e ON e.instrument_id=hp.instrument_id AND substr(e.occurred_at,1,10)<=hp.price_date
+         FROM dates
+         JOIN events e ON substr(e.occurred_at,1,10)<=dates.price_date
          JOIN accounts a ON a.id=e.account_id
+         LEFT JOIN historical_prices hp
+           ON hp.instrument_id=e.instrument_id AND hp.price_date=dates.price_date
          WHERE e.quantity_coefficient IS NOT NULL AND (
              e.event_type IN ('buy','sell','transfer','corporate_action')
              OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
          )
            AND NOT EXISTS (SELECT 1 FROM broker_position_snapshots bp
-             WHERE bp.account_id=e.account_id AND bp.report_date=hp.price_date
+             WHERE bp.account_id=e.account_id AND bp.report_date=dates.price_date
                AND bp.position_value_coefficient IS NOT NULL)
-         GROUP BY hp.price_date, hp.instrument_id, e.account_id
-         HAVING quantity > 0 ORDER BY hp.price_date",
+         GROUP BY dates.price_date, e.instrument_id, e.account_id
+         HAVING quantity > 0 ORDER BY dates.price_date",
     )?;
+    let mut reconstructed_totals: BTreeMap<String, Decimal> = BTreeMap::new();
+    let mut incomplete_dates = BTreeSet::new();
     let mut rows = reconstructed_statement.query([])?;
     while let Some(row) = rows.next()? {
         let account_id: String = row.get(4)?;
@@ -575,8 +580,14 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
             continue;
         }
         let date: String = row.get(0)?;
-        let price = exact(row.get(1)?, row.get(2)?).unwrap_or_default();
-        let currency: String = row.get(3)?;
+        let Some(price) = exact(row.get(1)?, row.get(2)?) else {
+            incomplete_dates.insert(date);
+            continue;
+        };
+        let Some(currency) = row.get::<_, Option<String>>(3)? else {
+            incomplete_dates.insert(date);
+            continue;
+        };
         if currency != reporting_currency {
             missing_conversion = true;
         }
@@ -588,10 +599,21 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
             &reporting_currency,
         )? {
             Some(converted) => {
-                *totals.entry(date).or_default() += converted;
+                *reconstructed_totals.entry(date).or_default() += converted;
                 reconstructed = true;
             }
-            None => missing_conversion = true,
+            None => {
+                incomplete_dates.insert(date);
+                missing_conversion = true;
+            }
+        }
+    }
+    if !incomplete_dates.is_empty() {
+        missing_conversion = true;
+    }
+    for (date, value) in reconstructed_totals {
+        if !incomplete_dates.contains(&date) {
+            *totals.entry(date).or_default() += value;
         }
     }
     if scope == "all" {
@@ -699,6 +721,7 @@ mod tests {
         connection
             .execute_batch(
                 "CREATE TABLE accounts (id TEXT PRIMARY KEY, display_name TEXT, broker TEXT);
+                 CREATE TABLE app_settings (id INTEGER PRIMARY KEY, reporting_currency TEXT, onboarding_complete INTEGER, ai_onboarding_complete INTEGER, ai_runtime TEXT, ai_model TEXT, ai_endpoint TEXT);
                  CREATE TABLE instruments (id TEXT PRIMARY KEY, symbol TEXT, name TEXT, asset_class TEXT, sector TEXT, geography TEXT);
                  CREATE TABLE events (
                    id TEXT PRIMARY KEY, account_id TEXT, instrument_id TEXT, event_type TEXT,
@@ -706,6 +729,9 @@ mod tests {
                    quantity_coefficient TEXT, quantity_scale INTEGER, description TEXT,
                    occurred_at TEXT
                  );
+                 CREATE TABLE historical_prices (instrument_id TEXT, price_date TEXT, price_coefficient TEXT, price_scale INTEGER, currency TEXT);
+                 CREATE TABLE broker_position_snapshots (account_id TEXT, report_date TEXT, position_value_coefficient TEXT, position_value_scale INTEGER, position_value_currency TEXT);
+                 INSERT INTO app_settings VALUES (1, 'USD', 1, 0, NULL, NULL, NULL);
                  INSERT INTO accounts VALUES ('account', 'IBKR ISA', 'ibkr');",
             )
             .expect("projection schema");
@@ -842,5 +868,39 @@ mod tests {
             .as_deref(),
             Some("CA83336J3073")
         );
+    }
+
+    #[test]
+    fn performance_history_excludes_dates_with_partial_price_coverage() {
+        let connection = projection_connection();
+        add_event(
+            &connection,
+            "buy-a",
+            "US0000000001",
+            "buy",
+            "1",
+            "Holding A",
+            "2026-01-01",
+        );
+        add_event(
+            &connection,
+            "buy-b",
+            "US0000000002",
+            "buy",
+            "1",
+            "Holding B",
+            "2026-01-01",
+        );
+        connection.execute_batch(
+            "INSERT INTO historical_prices VALUES ('US0000000001', '2026-01-02', '1000', 2, 'USD');
+             INSERT INTO historical_prices VALUES ('US0000000002', '2026-01-02', '2000', 2, 'USD');
+             INSERT INTO historical_prices VALUES ('US0000000001', '2026-01-03', '1100', 2, 'USD');"
+        ).expect("historical prices");
+
+        let history = performance_history(&connection, "account:account").expect("history");
+        assert_eq!(history.points.len(), 1);
+        assert_eq!(history.points[0].date, "2026-01-02");
+        assert_eq!(history.points[0].value, "30");
+        assert_eq!(history.coverage, "partial");
     }
 }

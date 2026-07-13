@@ -367,3 +367,74 @@ footer { font-size:10px; }
 .area-chart{position:relative}.latest-point-marker{position:absolute;width:9px;height:9px;border:2px solid #177554;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(33,132,95,.12);transform:translate(-50%,-50%);pointer-events:none}
 .history-scopes{display:flex;gap:4px;margin:8px 0 -1px;padding:0 6px;overflow-x:auto}.history-scopes button{flex:none;padding:10px 13px;border:1px solid transparent;border-bottom-color:var(--line);border-radius:10px 10px 0 0;background:transparent;color:#64746d;font-size:11px;font-weight:700}.history-scopes button.active{border-color:var(--line);border-bottom-color:#fff;background:#fff;color:#15513e}
 .history-panel{margin-top:0;padding:22px 24px 18px;border-radius:0 18px 18px;background:#fff;box-shadow:0 16px 42px rgba(19,55,43,.06)}.history-heading h2{font-size:19px}.history-heading>div:last-child strong{font-size:25px}.history-ranges{margin:18px 0 8px;padding:3px;gap:2px;border:0;background:#f0f4ef}.history-ranges button{min-width:48px;padding:7px 11px;font-size:11px}.history-ranges button.active{background:#174f3f;box-shadow:none}.area-chart{height:280px;border-radius:10px;background:repeating-linear-gradient(to bottom,transparent 0,transparent calc(25% - 1px),rgba(25,65,51,.055) 25%)}.area-chart path:nth-of-type(2){stroke-width:2.2}.area-chart circle.latest-point{fill:#fff;stroke:#177554;stroke-width:1.2}.history-axis{font-variant-numeric:tabular-nums}.history-save{margin:7px 8px 0 auto}
+
+/* Consistent, theme-preserving form controls across application dialogs. */
+:root {
+  --form-control-height: 48px;
+  --form-control-radius: 11px;
+  --form-control-border: rgba(20,44,36,.15);
+  --form-control-focus: #4d9e76;
+}
+.dialog-columns input,
+.dialog-columns select,
+.market-columns input,
+.market-columns select,
+.market-provider input,
+.backup-settings input,
+.portfolio-search input {
+  box-sizing:border-box;
+  height:var(--form-control-height);
+  min-height:var(--form-control-height);
+  padding:0 14px;
+  border:1px solid var(--form-control-border);
+  border-radius:var(--form-control-radius);
+  background-color:#fff;
+  line-height:normal;
+  transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease;
+}
+.dialog-columns select,
+.market-columns select {
+  appearance:none;
+  padding-right:42px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m3 5 4 4 4-4' stroke='%23304c42' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 14px center;
+  background-size:14px;
+}
+.dialog-columns input:hover,
+.dialog-columns select:hover,
+.market-columns input:hover,
+.market-columns select:hover,
+.market-provider input:hover,
+.backup-settings input:hover,
+.portfolio-search input:hover { border-color:rgba(20,76,59,.28); }
+.dialog-columns input:focus,
+.dialog-columns select:focus,
+.market-columns input:focus,
+.market-columns select:focus,
+.market-provider input:focus,
+.backup-settings input:focus,
+.portfolio-search input:focus {
+  outline:0;
+  border-color:var(--form-control-focus);
+  box-shadow:0 0 0 3px rgba(77,158,118,.14);
+}
+.dialog-columns label,.market-columns label,.market-provider label,.backup-settings label { gap:8px; }
+.dialog-columns .primary-button,
+.dialog-columns .secondary-button,
+.market-columns .primary-button {
+  min-height:48px;
+  padding:0 18px;
+  border-radius:var(--form-control-radius);
+}
+.primary-button,.secondary-button,.file-drop,.dialog-close { transition:transform .14s ease,box-shadow .16s ease,border-color .16s ease,background-color .16s ease; }
+.primary-button:not(:disabled):active,.secondary-button:not(:disabled):active,.file-drop:not(:disabled):active { transform:translateY(1px); }
+.secondary-button:not(:disabled):hover { border-color:rgba(15,76,59,.32);background:#dcede3;box-shadow:0 8px 22px rgba(20,76,59,.08); }
+.file-drop { min-height:104px;border-radius:var(--form-control-radius); }
+.file-drop:not(:disabled):hover { border-color:rgba(26,92,68,.46);background:rgba(221,239,228,.5); }
+.dialog-close { flex:none;width:42px;height:42px;display:grid;place-items:center;padding:0;cursor:pointer; }
+.dialog-close:hover { border-color:rgba(20,76,59,.22);background:#f1f7f2;color:#245f49; }
+.dialog-close:focus:not(:focus-visible) { outline:0; }
+.dialog-close:focus-visible { outline:0;box-shadow:0 0 0 3px rgba(77,158,118,.22); }
+.search-select>button { top:7px;right:7px; }
+@media(max-width:600px){:root{--form-control-height:46px}.dialog-close{width:40px;height:40px}}

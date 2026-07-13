@@ -66,12 +66,19 @@ test("completes accessible first-run onboarding", async ({ page }) => {
       columnContentWidth: column
         ? column.clientWidth - Number.parseFloat(columnStyle?.paddingLeft ?? "0") - Number.parseFloat(columnStyle?.paddingRight ?? "0")
         : 0,
+      controlHeights: Array.from(dialog.querySelectorAll<HTMLElement>(".dialog-columns input, .dialog-columns select"))
+        .map((control) => control.getBoundingClientRect().height),
+      actionHeights: Array.from(dialog.querySelectorAll<HTMLElement>(".dialog-columns .primary-button, .dialog-columns .secondary-button"))
+        .map((control) => control.getBoundingClientRect().height),
     };
   });
   expect(importLayout.centreOffsetX).toBeLessThanOrEqual(1);
   expect(importLayout.centreOffsetY).toBeLessThanOrEqual(1);
   expect(importLayout.pickerDisplay).toBe("grid");
   expect(Math.abs(importLayout.pickerWidth - importLayout.columnContentWidth)).toBeLessThanOrEqual(1);
+  expect(new Set(importLayout.controlHeights)).toEqual(new Set([48]));
+  expect(new Set(importLayout.actionHeights)).toEqual(new Set([48]));
+  if (process.env.CAPTURE_SCREENSHOTS) { await page.waitForTimeout(300); await page.screenshot({ path: "../.dev/screenshots/import-dialog.png", fullPage: true }); }
   const dialogScan = await new AxeBuilder({ page }).analyze();
   expect(dialogScan.violations).toEqual([]);
   await page.getByRole("button", { name: "Close import dialog" }).click();

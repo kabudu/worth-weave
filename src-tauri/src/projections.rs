@@ -225,7 +225,11 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
             position.cost_basis += amount;
         } else {
             if quantity > position.quantity {
-                position.quantity -= quantity;
+                if position.broker == "trading_212" {
+                    position.quantity = Decimal::ZERO;
+                } else {
+                    position.quantity -= quantity;
+                }
                 position.cost_basis = Decimal::ZERO;
                 position.basis_complete = false;
             } else {

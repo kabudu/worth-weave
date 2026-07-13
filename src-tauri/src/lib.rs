@@ -782,6 +782,39 @@ mod tests {
     }
 
     #[test]
+    fn trading212_disposals_without_acquisition_history_do_not_create_short_holdings() {
+        let directory = tempdir().expect("temp directory");
+        let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        let account = db::create_account(
+            &connection,
+            &CreateAccountInput {
+                broker: "trading_212".into(),
+                jurisdiction: "GB".into(),
+                account_type: "stocks_and_shares_isa".into(),
+                display_name: "Trading 212 ISA".into(),
+            },
+        )
+        .expect("create account");
+        let export = directory.path().join("history.csv");
+        std::fs::write(
+            &export,
+            "Action,Time,ISIN,Ticker,ID,No. of shares,Total,Currency (Total)\nMarket sell,2024-02-21 19:36:16,US54948X1090,LUCD,S1,1.56989332,1.54,GBP\nLimit sell,2024-12-16 20:58:38,US54948X1090,LUCD,S2,11,6.97,GBP\n",
+        ).expect("write export");
+        imports::import_csv(
+            &mut connection,
+            &account.id,
+            &export,
+            "stocks_and_shares_isa",
+        )
+        .expect("import");
+        assert!(
+            projections::holdings(&connection)
+                .expect("holdings")
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn partial_history_never_invents_cost_basis() {
         let directory = tempdir().expect("temp directory");
         let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
@@ -804,10 +837,11 @@ mod tests {
         .expect("write export");
         imports::import_csv(&mut connection, &account.id, &export, "invest").expect("import");
 
-        let holdings = projections::holdings(&connection).expect("holdings");
-        assert_eq!(holdings[0].quantity, "-4");
-        assert!(!holdings[0].cost_basis_complete);
-        assert!(holdings[0].cost_basis.is_none());
+        assert!(
+            projections::holdings(&connection)
+                .expect("holdings")
+                .is_empty()
+        );
     }
 
     #[test]

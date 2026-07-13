@@ -457,3 +457,22 @@ footer { font-size:10px; }
 .ai-setup-button:active { transform:translateY(1px); }
 .ai-setup-button span,.ai-setup-button strong,.ai-setup-button small { display:block; }
 .ai-setup-button strong { font-size:13px; }.ai-setup-button small { margin-top:2px;color:#537066;font-size:10px; }.ai-setup-button b { font-size:20px;font-weight:500; }
+
+/* Branded progress states keep long local calculations visibly responsive. */
+.portfolio-loading { min-height:calc(100vh - 120px);display:grid;place-content:center;justify-items:center;padding:48px;text-align:center; }
+.portfolio-loading-mark { position:relative;width:82px;height:82px;display:grid;place-items:center;margin-bottom:26px;border-radius:25px;background:#0d392e;box-shadow:0 20px 48px rgba(11,55,43,.2); }
+.portfolio-loading-mark .brand-mark { position:relative;z-index:1;transform:skew(-8deg) scale(1.18); }
+.portfolio-loading-ring { position:absolute;inset:-9px;border:2px solid rgba(35,124,88,.14);border-top-color:#3aa879;border-radius:29px;animation:worthweave-spin 1.15s linear infinite; }
+.portfolio-loading .section-kicker { margin-bottom:8px; }.portfolio-loading h1 { margin:0;color:#143a2e;font:600 clamp(27px,3vw,38px) "Manrope Variable";letter-spacing:-1.2px; }
+.portfolio-loading p { max-width:520px;margin:12px 0 20px;color:#53665d;font-size:13px;line-height:1.6; }
+.portfolio-loading-progress { width:min(360px,70vw);height:4px;overflow:hidden;border-radius:999px;background:#dfe9e2; }
+.portfolio-loading-progress span { display:block;width:42%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#1d7655,#62b88c);animation:worthweave-progress 1.35s ease-in-out infinite; }
+.portfolio-loading small { margin-top:15px;color:#78877f;font-size:11px; }
+.chart-loading { height:100%;display:grid;place-content:center;justify-items:center;gap:7px;text-align:center;color:#53675e; }
+.chart-loading-mark { height:35px;display:flex;align-items:end;gap:4px;margin-bottom:5px;transform:skew(-8deg); }
+.chart-loading-mark i { width:7px;border-radius:4px 4px 1px 1px;background:#31966c;animation:worthweave-bars .9s ease-in-out infinite alternate; }.chart-loading-mark i:nth-child(1){height:14px;opacity:.55}.chart-loading-mark i:nth-child(2){height:24px;opacity:.78;animation-delay:.15s}.chart-loading-mark i:nth-child(3){height:32px;animation-delay:.3s}
+.chart-loading strong { color:#294b3e;font-size:13px; }.chart-loading small { font-size:10px; }
+@keyframes worthweave-spin { to { transform:rotate(360deg); } }
+@keyframes worthweave-progress { 0% { transform:translateX(-110%); } 100% { transform:translateX(350%); } }
+@keyframes worthweave-bars { to { transform:scaleY(.55);opacity:.45; } }
+@media(prefers-reduced-motion:reduce){.portfolio-loading-ring,.portfolio-loading-progress span,.chart-loading-mark i{animation:none}.portfolio-loading-progress span{width:70%}}

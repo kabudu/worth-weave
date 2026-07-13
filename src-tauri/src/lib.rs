@@ -17,7 +17,7 @@ use models::{
     SaveMassiveApiKeyInput, SetFxRateInput, SetPriceInput, TotalReturnAttribution,
     UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
 };
-use tauri::{Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 fn with_connection<T>(
     state: &State<'_, AppState>,
@@ -28,6 +28,19 @@ fn with_connection<T>(
         .lock()
         .map_err(|_| WorthweaveError::StateUnavailable)?;
     operation(&mut connection)
+}
+
+async fn with_connection_blocking<T, F>(app: AppHandle, operation: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&mut rusqlite::Connection) -> Result<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        with_connection(&state, operation)
+    })
+    .await
+    .map_err(|_| WorthweaveError::StateUnavailable)?
 }
 
 #[tauri::command]
@@ -135,8 +148,8 @@ fn list_activity(limit: Option<u32>, state: State<'_, AppState>) -> Result<Vec<A
 }
 
 #[tauri::command]
-fn list_holdings(state: State<'_, AppState>) -> Result<Vec<Holding>> {
-    with_connection(&state, |connection| projections::holdings(connection))
+async fn list_holdings(app: AppHandle) -> Result<Vec<Holding>> {
+    with_connection_blocking(app, |connection| projections::holdings(connection)).await
 }
 
 #[tauri::command]
@@ -145,18 +158,20 @@ fn income_summary(state: State<'_, AppState>) -> Result<Vec<IncomeSummary>> {
 }
 
 #[tauri::command]
-fn portfolio_reconciliation(state: State<'_, AppState>) -> Result<Vec<ReconciliationItem>> {
-    with_connection(&state, |connection| projections::reconciliation(connection))
+async fn portfolio_reconciliation(app: AppHandle) -> Result<Vec<ReconciliationItem>> {
+    with_connection_blocking(app, |connection| projections::reconciliation(connection)).await
 }
 
 #[tauri::command]
-fn portfolio_performance_history(
+async fn portfolio_performance_history(
     scope: Option<String>,
-    state: State<'_, AppState>,
+    app: AppHandle,
 ) -> Result<crate::models::PerformanceHistory> {
-    with_connection(&state, |connection| {
-        projections::performance_history(connection, scope.as_deref().unwrap_or("all"))
+    let scope = scope.unwrap_or_else(|| "all".into());
+    with_connection_blocking(app, move |connection| {
+        projections::performance_history(connection, &scope)
     })
+    .await
 }
 
 #[tauri::command]
@@ -233,15 +248,16 @@ fn update_instrument_metadata(
 }
 
 #[tauri::command]
-fn portfolio_valuation(state: State<'_, AppState>) -> Result<ValuationSummary> {
-    with_connection(&state, |connection| market::valuation(connection))
+async fn portfolio_valuation(app: AppHandle) -> Result<ValuationSummary> {
+    with_connection_blocking(app, |connection| market::valuation(connection)).await
 }
 
 #[tauri::command]
-fn portfolio_total_return(state: State<'_, AppState>) -> Result<TotalReturnAttribution> {
-    with_connection(&state, |connection| {
+async fn portfolio_total_return(app: AppHandle) -> Result<TotalReturnAttribution> {
+    with_connection_blocking(app, |connection| {
         market::total_return_attribution(connection)
     })
+    .await
 }
 
 #[tauri::command]
@@ -255,8 +271,8 @@ fn list_portfolio_snapshots(state: State<'_, AppState>) -> Result<Vec<PortfolioS
 }
 
 #[tauri::command]
-fn portfolio_allocation(state: State<'_, AppState>) -> Result<AllocationReport> {
-    with_connection(&state, |connection| market::allocation(connection))
+async fn portfolio_allocation(app: AppHandle) -> Result<AllocationReport> {
+    with_connection_blocking(app, |connection| market::allocation(connection)).await
 }
 
 #[tauri::command]

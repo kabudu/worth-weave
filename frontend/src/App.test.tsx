@@ -91,6 +91,26 @@ test("renders truthful empty portfolio state", async () => {
   expect(screen.getByText(/never need to share your broker password/i)).toBeInTheDocument();
 });
 
+test("shows branded progress while core portfolio data is still loading", async () => {
+  mockNativeCommands(true);
+  const nativeImplementation = vi.mocked(invoke).getMockImplementation();
+  let finishHoldings: ((value: unknown[]) => void) | undefined;
+  vi.mocked(invoke).mockImplementation((command, args) => {
+    if (command === "list_holdings") return new Promise((resolve) => { finishHoldings = resolve; });
+    return nativeImplementation!(command, args);
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  expect(await screen.findByRole("heading", { name: /your wealth, in focus/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Portfolio" }));
+  expect(screen.getByRole("status", { name: "Loading portfolio" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /bringing your figures together/i })).toBeInTheDocument();
+
+  finishHoldings?.([]);
+  expect(await screen.findByRole("heading", { name: /your investments/i })).toBeInTheDocument();
+});
+
 test("requires a main currency during first-run onboarding", async () => {
   mockNativeCommands(false);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

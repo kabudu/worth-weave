@@ -31,6 +31,19 @@ function BrandMark() {
   );
 }
 
+function PortfolioLoading() {
+  return (
+    <section className="portfolio-loading" role="status" aria-live="polite" aria-label="Loading portfolio">
+      <div className="portfolio-loading-mark"><BrandMark /><span className="portfolio-loading-ring" /></div>
+      <span className="section-kicker">Preparing your portfolio</span>
+      <h1>Bringing your figures together…</h1>
+      <p>Worthweave is calculating holdings, prices and history securely on this Mac.</p>
+      <div className="portfolio-loading-progress" aria-hidden="true"><span /></div>
+      <small>Large account histories can take a little longer the first time. You can keep Worthweave open.</small>
+    </section>
+  );
+}
+
 function StatusOrb({ accounts, imports, valuedCount, totalCount, missingPrices }: { accounts: number; imports: number; valuedCount: number; totalCount: number; missingPrices: number }) {
   const progress = totalCount > 0 ? Math.round(valuedCount / totalCount * 100) : imports > 0 ? 18 : accounts > 0 ? 10 : 4;
   const headline = totalCount > 0 ? `${valuedCount}/${totalCount}` : imports > 0 ? "Imported" : accounts > 0 ? "Ready" : "Start";
@@ -160,7 +173,7 @@ export function App() {
 
         <UpdateBanner />
 
-        {activeView === "Portfolio" ? <PortfolioView accounts={accounts.data ?? []} holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} attribution={attribution.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private AI</span><h1>Ask about your portfolio</h1><p>Get clear answers based on the figures already shown in Worthweave.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} onOpenSettings={() => setSettingsOpen(true)} /></section> : <>
+        {activeView === "Portfolio" ? holdings.isPending || accounts.isPending ? <PortfolioLoading /> : <PortfolioView accounts={accounts.data ?? []} holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} attribution={attribution.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private AI</span><h1>Ask about your portfolio</h1><p>Get clear answers based on the figures already shown in Worthweave.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} onOpenSettings={() => setSettingsOpen(true)} /></section> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
             <p className="kicker">{dateLabel}</p>

@@ -82,11 +82,14 @@ fn ai_recommendation() -> AiRecommendation {
 async fn setup_recommended_ai(state: State<'_, AppState>) -> Result<AppSettings> {
     let recommendation = ai::recommendation();
     let install_target = recommendation.clone();
-    tauri::async_runtime::spawn_blocking(move || ai::install(&install_target))
-        .await
-        .map_err(|error| {
-            WorthweaveError::InvalidSettings(format!("AI setup task failed: {error}"))
-        })??;
+    tauri::async_runtime::spawn_blocking(move || {
+        ai::stop_managed_runtime();
+        ai::install(&install_target)
+    })
+    .await
+    .map_err(|error| {
+        WorthweaveError::InvalidSettings(format!("AI setup task failed: {error}"))
+    })??;
     let input = SaveAiSettingsInput {
         runtime: Some(recommendation.runtime.into()),
         model: Some(recommendation.model),

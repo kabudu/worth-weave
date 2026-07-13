@@ -75,6 +75,34 @@ fn memory_gib() -> u64 {
         .unwrap_or(0)
 }
 
+fn available_memory_gib(total_gib: u64) -> u64 {
+    Command::new("/usr/bin/memory_pressure")
+        .arg("-Q")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|output| {
+            output
+                .split_whitespace()
+                .find_map(|part| part.strip_suffix('%')?.parse::<u64>().ok())
+        })
+        .map(|percentage| total_gib.saturating_mul(percentage) / 100)
+        .unwrap_or_else(|| total_gib.saturating_sub(8).min(total_gib / 2))
+}
+
+fn recommended_rapid_model(total_gib: u64, available_gib: u64) -> (&'static str, u64) {
+    let reserve_gib = (total_gib / 5).max(4);
+    let model_budget_gib = available_gib.saturating_sub(reserve_gib);
+    let model = match model_budget_gib {
+        0..=23 => "qwen3.5-4b-4bit",
+        24..=47 => "gpt-oss-20b-mxfp4-q8",
+        48..=95 => "qwen3.6-35b-8bit",
+        _ => "gpt-oss-120b-mxfp4-q8",
+    };
+    (model, reserve_gib)
+}
+
 fn command_path(command: &str) -> Option<PathBuf> {
     let mut candidates = vec![
         PathBuf::from("/opt/homebrew/bin").join(command),
@@ -108,21 +136,17 @@ fn available(command: &str) -> bool {
 }
 
 pub fn recommendation() -> AiRecommendation {
-    let memory = memory_gib();
+    let total_memory = memory_gib();
     if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
-        let model = match memory {
-            0..=23 => "qwen3.5-4b-4bit",
-            24..=47 => "gpt-oss-20b-mxfp4-q8",
-            48..=95 => "qwen3.6-35b-8bit",
-            _ => "gpt-oss-120b-mxfp4-q8",
-        };
+        let available_memory = available_memory_gib(total_memory);
+        let (model, reserve_memory) = recommended_rapid_model(total_memory, available_memory);
         AiRecommendation {
             runtime: "rapid-mlx",
             runtime_name: "Rapid-MLX",
             model: model.into(),
             endpoint: "http://127.0.0.1:8000/v1",
             rationale: format!(
-                "Apple Silicon with {memory} GB unified memory; model follows Rapid-MLX's published RAM tier."
+                "Apple Silicon with {total_memory} GB unified memory and about {available_memory} GB currently available. Worthweave reserves {reserve_memory} GB for macOS and other apps before selecting a model."
             ),
             installed: available("rapid-mlx"),
             supported: true,
@@ -228,6 +252,10 @@ struct ChatAnswer {
     content: String,
 }
 
+fn truncated_answer(answer: &str) -> bool {
+    let normalized = answer.to_ascii_lowercase();
+    normalized.contains("reasoning incomplete") || normalized.starts_with("[truncated")
+}
 fn local_endpoint(endpoint: &str) -> Result<reqwest::Url> {
     let base = reqwest::Url::parse(endpoint)
         .map_err(|_| WorthweaveError::LocalAi("local-AI endpoint is invalid".into()))?;
@@ -373,7 +401,7 @@ pub async fn explain(
                     },
                 ],
                 temperature: 0.1,
-                max_tokens: 800,
+                max_tokens: 2048,
             })
             .send()
             .await;
@@ -436,6 +464,11 @@ pub async fn explain(
         .map(|choice| choice.message.content.trim().to_owned())
         .filter(|answer| !answer.is_empty())
         .ok_or_else(|| WorthweaveError::LocalAi("runtime returned no explanation".into()))?;
+    if truncated_answer(&answer) {
+        return Err(WorthweaveError::LocalAi(
+            "the local model ran out of answer space. Worthweave did not show the incomplete response; try again after setting up the newly recommended smaller model in Settings".into(),
+        ));
+    }
     Ok(PortfolioExplanation {
         answer,
         model: model.into(),
@@ -446,6 +479,27 @@ pub async fn explain(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rapid_model_selection_preserves_live_system_headroom() {
+        assert_eq!(recommended_rapid_model(24, 7), ("qwen3.5-4b-4bit", 4));
+        assert_eq!(
+            recommended_rapid_model(64, 40),
+            ("gpt-oss-20b-mxfp4-q8", 12)
+        );
+        assert_eq!(
+            recommended_rapid_model(128, 128),
+            ("gpt-oss-120b-mxfp4-q8", 25)
+        );
+    }
+
+    #[test]
+    fn incomplete_reasoning_is_not_treated_as_an_answer() {
+        assert!(truncated_answer(
+            "[truncated — reasoning incomplete; raise max_tokens]"
+        ));
+        assert!(!truncated_answer("Your largest holding is Example plc."));
+    }
 
     #[test]
     fn explanations_reject_non_loopback_endpoints() {

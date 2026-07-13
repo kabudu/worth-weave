@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use crate::error::{Result, WorthweaveError};
@@ -185,7 +185,7 @@ fn local_endpoint(endpoint: &str) -> Result<reqwest::Url> {
     Ok(base)
 }
 
-fn start_runtime(runtime: &str, model: &str) -> Result<()> {
+fn start_runtime(runtime: &str, model: &str) -> Result<Child> {
     if model.is_empty() || model.chars().count() > 160 {
         return Err(WorthweaveError::LocalAi(
             "configured model name is invalid".into(),
@@ -227,7 +227,6 @@ fn start_runtime(runtime: &str, model: &str) -> Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map(|_| ())
         .map_err(|error| {
             WorthweaveError::LocalAi(format!("could not start local runtime: {error}"))
         })
@@ -236,7 +235,7 @@ fn start_runtime(runtime: &str, model: &str) -> Result<()> {
 async fn ensure_runtime(runtime: &str, model: &str, base: &reqwest::Url) -> Result<()> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_millis(500))
-        .timeout(Duration::from_secs(1))
+        .timeout(Duration::from_secs(2))
         .build()
         .map_err(|error| WorthweaveError::LocalAi(error.to_string()))?;
     let models_url = reqwest::Url::parse(&format!("{}/", base.as_str().trim_end_matches('/')))
@@ -250,10 +249,15 @@ async fn ensure_runtime(runtime: &str, model: &str, base: &reqwest::Url) -> Resu
     {
         return Ok(());
     }
-    start_runtime(runtime, model)?;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    let mut process = start_runtime(runtime, model)?;
+    let startup_timeout = if runtime == "rapid-mlx" {
+        Duration::from_secs(180)
+    } else {
+        Duration::from_secs(60)
+    };
+    let deadline = tokio::time::Instant::now() + startup_timeout;
     while tokio::time::Instant::now() < deadline {
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(750)).await;
         if client
             .get(models_url.clone())
             .send()
@@ -262,9 +266,16 @@ async fn ensure_runtime(runtime: &str, model: &str, base: &reqwest::Url) -> Resu
         {
             return Ok(());
         }
+        if let Some(status) = process.try_wait().map_err(|error| {
+            WorthweaveError::LocalAi(format!("could not monitor local runtime: {error}"))
+        })? {
+            return Err(WorthweaveError::LocalAi(format!(
+                "the local runtime stopped before the model was ready ({status}). Set up private AI again in Settings."
+            )));
+        }
     }
     Err(WorthweaveError::LocalAi(
-        "local runtime did not become ready within 20 seconds".into(),
+        "the local model is taking longer than expected to start. Wait a moment, then try your question again.".into(),
     ))
 }
 

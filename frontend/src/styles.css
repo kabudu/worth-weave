@@ -517,3 +517,11 @@ footer { font-size:10px; }
 .metric-card:not(.featured):hover,.allocation-grid>article:hover,.income-grid article:hover { border-color:rgba(25,91,68,.16);box-shadow:0 12px 34px rgba(35,76,59,.065); }
 .sidebar nav button:focus-visible,.brand:focus-visible,.profile-button:focus-visible { outline-color:#8de2b4;outline-offset:1px; }
 @media(max-width:760px){.settings-content,.ai-settings,.backup-settings{grid-template-columns:1fr;gap:18px;padding:24px}.settings-content>div>p,.ai-settings>div:first-child p,.backup-settings>div:first-child p{max-width:none}.market-columns form>p{min-height:0}.backup-actions{grid-template-columns:1fr}.backup-actions .secondary-button:first-child{grid-column:auto}}
+
+.ai-working { display:flex;align-items:center;gap:12px;margin-top:14px;padding:12px 14px;border:1px solid rgba(143,196,171,.16);border-radius:11px;background:rgba(255,255,255,.045); }
+.ai-working>span { flex:none;display:flex;gap:4px;align-items:center; }.ai-working i { width:6px;height:6px;border-radius:50%;background:#8de2b4;animation:ai-pulse .9s ease-in-out infinite alternate; }.ai-working i:nth-child(2){animation-delay:.18s}.ai-working i:nth-child(3){animation-delay:.36s}
+.ai-working strong,.ai-working small { display:block; }.ai-working strong { color:#dce9e3;font-size:12px; }.ai-working small { margin-top:3px;color:#91a99f;font-size:10px;line-height:1.45; }
+.ai-error { display:grid;grid-template-columns:1fr auto;gap:4px 16px;align-items:center;margin-top:14px;padding:13px 14px;border:1px solid rgba(218,119,84,.28);border-radius:11px;background:rgba(128,52,32,.2); }
+.ai-error strong,.ai-error span { display:block; }.ai-error strong { color:#ffd8ca;font-size:12px; }.ai-error span { color:#e9b7a6;font-size:10px;line-height:1.45; }.ai-error button { grid-column:2;grid-row:1/3;min-height:36px;padding:0 12px;border:1px solid rgba(255,216,202,.22);border-radius:8px;background:rgba(255,255,255,.07);color:#ffe6dc;font-size:10px;font-weight:700; }
+@keyframes ai-pulse { to { opacity:.25;transform:translateY(-2px); } }
+@media(prefers-reduced-motion:reduce){.ai-working i{animation:none}}

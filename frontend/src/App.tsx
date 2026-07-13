@@ -91,8 +91,8 @@ export function App() {
     },
   });
   useEffect(() => {
-    if ((valuation.data?.missing_fx_count || valuation.data?.stale_fx_count) && fxRefresh.isIdle) fxRefresh.mutate();
-  }, [valuation.data?.missing_fx_count, valuation.data?.stale_fx_count, fxRefresh]);
+    if (ready && fxRefresh.isIdle) fxRefresh.mutate();
+  }, [ready, fxRefresh]);
   const attribution = useQuery({ queryKey: ["total-return"], queryFn: ({ signal }) => getTotalReturnAttribution(signal), enabled: ready && activeView === "Portfolio" });
   const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal), enabled: ready && activeView === "Portfolio" });
   const historyRefresh = useMutation({ mutationFn: refreshPortfolioHistory, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["performance"] }) });

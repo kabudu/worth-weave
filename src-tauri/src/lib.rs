@@ -171,9 +171,18 @@ fn set_fx_rate(input: SetFxRateInput, state: State<'_, AppState>) -> Result<FxRa
 
 #[tauri::command]
 async fn refresh_fx_rates(state: State<'_, AppState>) -> Result<FxRefreshResult> {
+    let historical_plan =
+        with_connection(&state, |connection| market::historical_fx_plan(connection))?;
+    let historical = if let Some(plan) = historical_plan.as_ref() {
+        market::fetch_ecb_historical_rates(plan).await?
+    } else {
+        Vec::new()
+    };
     let reference = market::fetch_ecb_reference_rates().await?;
     with_connection(&state, |connection| {
-        market::save_ecb_reference_rates(connection, &reference)
+        let mut result = market::save_ecb_reference_rates(connection, &reference)?;
+        result.rates_saved += market::save_ecb_historical_rates(connection, &historical)?;
+        Ok(result)
     })
 }
 

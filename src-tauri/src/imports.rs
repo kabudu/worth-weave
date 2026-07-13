@@ -26,13 +26,16 @@ struct Event {
     amount: Option<ExactValue>,
     currency: Option<String>,
     quantity: Option<ExactValue>,
+    native_amount: Option<ExactValue>,
+    native_currency: Option<String>,
+    broker_fx_rate: Option<ExactValue>,
     instrument_id: Option<String>,
     symbol: Option<String>,
     name: Option<String>,
     asset_class: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct ExactValue {
     coefficient: String,
     scale: u32,
@@ -214,6 +217,45 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
             &format!("shares at row {}", offset + 2),
         )?
         .map(|value| exact_value(value, None));
+        let price = decimal(
+            field(&row, &positions, "Price / share"),
+            &format!("Price / share at row {}", offset + 2),
+        )?;
+        let price_currency = field(&row, &positions, "Currency (Price / share)")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_uppercase());
+        let exchange_rate = decimal(
+            field(&row, &positions, "Exchange rate"),
+            &format!("Exchange rate at row {}", offset + 2),
+        )?;
+        let (native_amount, native_currency, broker_fx_rate) =
+            match (price, quantity.as_ref(), price_currency.as_deref()) {
+                (Some(price), Some(quantity), Some("GBX" | "GBPENCE")) => {
+                    let quantity = Decimal::from_str(&quantity.coefficient).unwrap_or_default()
+                        / Decimal::from(10u64.pow(quantity.scale));
+                    (
+                        Some(exact_value(
+                            (price * quantity).abs() / Decimal::from(100),
+                            Some(2),
+                        )),
+                        Some("GBP".into()),
+                        Some(exact_value(Decimal::ONE, None)),
+                    )
+                }
+                (Some(price), Some(quantity), Some(native_currency)) => {
+                    let quantity = Decimal::from_str(&quantity.coefficient).unwrap_or_default()
+                        / Decimal::from(10u64.pow(quantity.scale));
+                    (
+                        Some(exact_value((price * quantity).abs(), None)),
+                        Some(native_currency.into()),
+                        exchange_rate
+                            .filter(|rate| !rate.is_zero())
+                            .map(|rate| exact_value(Decimal::ONE / rate, None)),
+                    )
+                }
+                _ => (None, None, None),
+            };
         let instrument_id = field(&row, &positions, "ISIN")
             .or_else(|| field(&row, &positions, "Ticker"))
             .map(str::trim)
@@ -239,6 +281,9 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
             amount,
             currency,
             quantity,
+            native_amount,
+            native_currency,
+            broker_fx_rate,
             instrument_id,
             symbol,
             name,
@@ -521,6 +566,9 @@ fn parse_ibkr(content: &[u8]) -> Result<ParsedImport> {
             event_type: ibkr_type(section, &row),
             occurred_at,
             description,
+            native_amount: amount.clone(),
+            native_currency: currency.clone(),
+            broker_fx_rate: None,
             amount,
             currency,
             quantity,
@@ -666,7 +714,11 @@ pub fn import_csv(
                 params![instrument_id, event.symbol, event.name, instrument_id, event.asset_class],
             )?;
         }
-        events_added += transaction.execute("INSERT OR IGNORE INTO events (id, account_id, import_batch_id, source_id, event_type, occurred_at, description, amount_coefficient, amount_scale, currency, quantity_coefficient, quantity_scale, instrument_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)", params![Uuid::new_v4().to_string(), account_id, batch_id, event.source_id, event.event_type, event.occurred_at, event.description, event.amount.as_ref().map(|value| &value.coefficient), event.amount.as_ref().map(|value| value.scale), event.currency, event.quantity.as_ref().map(|value| &value.coefficient), event.quantity.as_ref().map(|value| value.scale), event.instrument_id])?;
+        events_added += transaction.execute("INSERT OR IGNORE INTO events (id, account_id, import_batch_id, source_id, event_type, occurred_at, description, amount_coefficient, amount_scale, currency, quantity_coefficient, quantity_scale, native_amount_coefficient, native_amount_scale, native_currency, broker_fx_coefficient, broker_fx_scale, instrument_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)", params![Uuid::new_v4().to_string(), account_id, batch_id, event.source_id, event.event_type, event.occurred_at, event.description, event.amount.as_ref().map(|value| &value.coefficient), event.amount.as_ref().map(|value| value.scale), event.currency, event.quantity.as_ref().map(|value| &value.coefficient), event.quantity.as_ref().map(|value| value.scale), event.native_amount.as_ref().map(|value| &value.coefficient), event.native_amount.as_ref().map(|value| value.scale), event.native_currency, event.broker_fx_rate.as_ref().map(|value| &value.coefficient), event.broker_fx_rate.as_ref().map(|value| value.scale), event.instrument_id])?;
+        transaction.execute(
+            "UPDATE events SET native_amount_coefficient=COALESCE(?3,native_amount_coefficient), native_amount_scale=COALESCE(?4,native_amount_scale), native_currency=COALESCE(?5,native_currency), broker_fx_coefficient=COALESCE(?6,broker_fx_coefficient), broker_fx_scale=COALESCE(?7,broker_fx_scale) WHERE account_id=?1 AND source_id=?2",
+            params![account_id, event.source_id, event.native_amount.as_ref().map(|value| &value.coefficient), event.native_amount.as_ref().map(|value| value.scale), event.native_currency, event.broker_fx_rate.as_ref().map(|value| &value.coefficient), event.broker_fx_rate.as_ref().map(|value| value.scale)],
+        )?;
         if event.instrument_id.is_some() {
             transaction.execute(
                 "UPDATE events
@@ -792,6 +844,26 @@ mod tests {
             Some(ExactValue {
                 coefficient: "125".into(),
                 scale: 2
+            })
+        );
+    }
+
+    #[test]
+    fn trading212_parser_preserves_native_trade_value_and_broker_fx() {
+        let parsed = parse_trading212(b"Action,Time,ISIN,Ticker,ID,No. of shares,Price / share,Currency (Price / share),Exchange rate,Total,Currency (Total)\nMarket buy,2026-07-01 10:00:00,US00TEST0001,TEST,T1,1.25,10.00,USD,1.25,10.00,GBP\n").expect("valid export");
+        assert_eq!(parsed.events[0].native_currency.as_deref(), Some("USD"));
+        assert_eq!(
+            parsed.events[0].native_amount,
+            Some(ExactValue {
+                coefficient: "125".into(),
+                scale: 1
+            })
+        );
+        assert_eq!(
+            parsed.events[0].broker_fx_rate,
+            Some(ExactValue {
+                coefficient: "8".into(),
+                scale: 1
             })
         );
     }

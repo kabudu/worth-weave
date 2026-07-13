@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Days, NaiveDate, Utc};
 use futures_util::{StreamExt, stream};
 use rusqlite::{Connection, OptionalExtension, params};
 use rust_decimal::Decimal;
@@ -18,7 +18,9 @@ use serde_json::Value;
 use uuid::Uuid;
 
 const ECB_DAILY_RATES_URL: &str = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
+const ECB_DATA_API_BASE: &str = "https://data-api.ecb.europa.eu/service/data/EXR";
 const MAX_ECB_RESPONSE_BYTES: usize = 256 * 1024;
+const MAX_ECB_HISTORY_BYTES: usize = 24 * 1024 * 1024;
 const MASSIVE_API_BASE: &str = "https://api.massive.com";
 const MASSIVE_KEYCHAIN_SERVICE: &str = "app.worthweave.portfolio";
 const MASSIVE_KEYCHAIN_ACCOUNT: &str = "massive-api-key";
@@ -492,6 +494,188 @@ pub(crate) struct EcbReferenceRates {
     rates_per_eur: BTreeMap<String, Decimal>,
 }
 
+pub(crate) struct HistoricalFxPlan {
+    start: NaiveDate,
+    end: NaiveDate,
+    reporting_currency: String,
+}
+
+pub(crate) struct HistoricalFxObservation {
+    base_currency: String,
+    quote_currency: String,
+    rate_date: String,
+    rate: Decimal,
+}
+
+pub(crate) fn historical_fx_plan(connection: &Connection) -> Result<Option<HistoricalFxPlan>> {
+    let coverage_start: Option<String> = connection.query_row(
+        "SELECT MIN(coverage_start) FROM import_batches",
+        [],
+        |row| row.get(0),
+    )?;
+    let Some(coverage_start) = coverage_start else {
+        return Ok(None);
+    };
+    let required_start = NaiveDate::parse_from_str(&coverage_start, "%Y-%m-%d").map_err(|_| {
+        WorthweaveError::InvalidMarketData("import coverage date is invalid".into())
+    })?;
+    let stored: (Option<String>, Option<String>) = connection.query_row(
+        "SELECT MIN(rate_date), MAX(rate_date) FROM historical_fx_rates",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let today = Utc::now().date_naive();
+    let start = match stored {
+        (Some(first), Some(last)) => {
+            let first = NaiveDate::parse_from_str(&first, "%Y-%m-%d").unwrap_or(required_start);
+            if first > required_start {
+                required_start
+            } else {
+                NaiveDate::parse_from_str(&last, "%Y-%m-%d")
+                    .unwrap_or(required_start)
+                    .checked_add_days(Days::new(1))
+                    .unwrap_or(today)
+            }
+        }
+        _ => required_start,
+    };
+    if start > today {
+        return Ok(None);
+    }
+    Ok(Some(HistoricalFxPlan {
+        start,
+        end: today,
+        reporting_currency: db::settings(connection)?
+            .reporting_currency
+            .unwrap_or_else(|| "GBP".into()),
+    }))
+}
+
+pub(crate) async fn fetch_ecb_historical_rates(
+    plan: &HistoricalFxPlan,
+) -> Result<Vec<HistoricalFxObservation>> {
+    let currencies = db::CURRENCIES
+        .iter()
+        .map(|currency| currency.code)
+        .filter(|currency| *currency != "EUR")
+        .collect::<Vec<_>>()
+        .join("+");
+    let url = format!(
+        "{ECB_DATA_API_BASE}/D.{currencies}.EUR.SP00.A?startPeriod={}&endPeriod={}&format=csvdata&detail=dataonly",
+        plan.start, plan.end
+    );
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(6))
+        .build()
+        .map_err(|_| {
+            WorthweaveError::InvalidMarketData("could not prepare ECB history request".into())
+        })?
+        .get(url)
+        .header(reqwest::header::USER_AGENT, "Worthweave/0.1")
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|error| {
+            WorthweaveError::InvalidMarketData(format!(
+                "could not download ECB historical rates: {error}"
+            ))
+        })?;
+    let bytes = response.bytes().await.map_err(|_| {
+        WorthweaveError::InvalidMarketData("could not read ECB historical rates".into())
+    })?;
+    if bytes.len() > MAX_ECB_HISTORY_BYTES {
+        return Err(WorthweaveError::InvalidMarketData(
+            "ECB historical response is unexpectedly large".into(),
+        ));
+    }
+    let mut reader = csv::Reader::from_reader(bytes.as_ref());
+    let headers = reader
+        .headers()
+        .map_err(|_| {
+            WorthweaveError::InvalidMarketData(
+                "ECB historical response has invalid CSV headers".into(),
+            )
+        })?
+        .clone();
+    let index = |name: &str| {
+        headers
+            .iter()
+            .position(|header| header == name)
+            .ok_or_else(|| {
+                WorthweaveError::InvalidMarketData(format!(
+                    "ECB historical response is missing {name}"
+                ))
+            })
+    };
+    let currency_index = index("CURRENCY")?;
+    let date_index = index("TIME_PERIOD")?;
+    let value_index = index("OBS_VALUE")?;
+    let mut per_date: BTreeMap<String, BTreeMap<String, Decimal>> = BTreeMap::new();
+    for row in reader.records() {
+        let row = row.map_err(|_| {
+            WorthweaveError::InvalidMarketData(
+                "ECB historical response contains an invalid row".into(),
+            )
+        })?;
+        let (Some(currency), Some(date), Some(value)) = (
+            row.get(currency_index),
+            row.get(date_index),
+            row.get(value_index),
+        ) else {
+            continue;
+        };
+        if let Ok(value) = Decimal::from_str(value) {
+            per_date
+                .entry(date.into())
+                .or_default()
+                .insert(currency.into(), value);
+        }
+    }
+    let mut observations = Vec::new();
+    for (date, mut rates) in per_date {
+        rates.insert("EUR".into(), Decimal::ONE);
+        let Some(quote_per_eur) = rates.get(&plan.reporting_currency).copied() else {
+            continue;
+        };
+        for currency in db::CURRENCIES {
+            if currency.code == plan.reporting_currency {
+                continue;
+            }
+            if let Some(base_per_eur) = rates.get(currency.code) {
+                observations.push(HistoricalFxObservation {
+                    base_currency: currency.code.into(),
+                    quote_currency: plan.reporting_currency.clone(),
+                    rate_date: date.clone(),
+                    rate: quote_per_eur / *base_per_eur,
+                });
+            }
+        }
+    }
+    Ok(observations)
+}
+
+pub(crate) fn save_ecb_historical_rates(
+    connection: &Connection,
+    observations: &[HistoricalFxObservation],
+) -> Result<usize> {
+    let transaction = connection.unchecked_transaction()?;
+    let mut saved = 0;
+    for observation in observations {
+        let (coefficient, scale) = parts(observation.rate);
+        saved += transaction.execute(
+            "INSERT INTO historical_fx_rates (base_currency, quote_currency, rate_date, rate_coefficient, rate_scale, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'ecb_historical')
+             ON CONFLICT(base_currency, quote_currency, rate_date) DO UPDATE SET
+               rate_coefficient=excluded.rate_coefficient, rate_scale=excluded.rate_scale,
+               source=excluded.source, fetched_at=CURRENT_TIMESTAMP",
+            params![observation.base_currency, observation.quote_currency, observation.rate_date, coefficient, scale],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(saved)
+}
+
 fn parse_positive(value: &str, field: &str) -> Result<Decimal> {
     Decimal::from_str(value.trim())
         .ok()
@@ -911,17 +1095,41 @@ pub fn valuation(connection: &Connection) -> Result<ValuationSummary> {
 struct AttributionPosition {
     quantity: Decimal,
     cost_basis: Decimal,
+    reporting_cost_basis: Decimal,
     complete: bool,
 }
 
-fn add_converted(
+fn historical_fx(
+    connection: &Connection,
+    base: &str,
+    quote: &str,
+    date: &str,
+) -> Result<Option<Decimal>> {
+    if base == quote {
+        return Ok(Some(Decimal::ONE));
+    }
+    let rate: Option<(String, u32)> = connection
+        .query_row(
+            "SELECT rate_coefficient, rate_scale FROM historical_fx_rates
+         WHERE base_currency=?1 AND quote_currency=?2 AND rate_date<=substr(?3,1,10)
+         ORDER BY rate_date DESC LIMIT 1",
+            params![base, quote, date],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    rate.map(|(coefficient, scale)| from_parts(coefficient, scale))
+        .transpose()
+}
+
+fn add_converted_on(
     connection: &Connection,
     total: &mut Decimal,
     value: Decimal,
     currency: &str,
     reporting_currency: &str,
+    occurred_at: &str,
 ) -> Result<bool> {
-    if let Some((rate, _)) = fx(connection, currency, reporting_currency)? {
+    if let Some(rate) = historical_fx(connection, currency, reporting_currency, occurred_at)? {
         *total += value * rate;
         Ok(true)
     } else {
@@ -948,7 +1156,9 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
     )?;
     let mut statement = connection.prepare(
         "SELECT account_id, instrument_id, event_type, amount_coefficient, amount_scale,
-                currency, quantity_coefficient, quantity_scale
+                currency, quantity_coefficient, quantity_scale, occurred_at,
+                native_amount_coefficient, native_amount_scale, native_currency,
+                broker_fx_coefficient, broker_fx_scale
          FROM events ORDER BY occurred_at, id",
     )?;
     let mut rows = statement.query([])?;
@@ -958,6 +1168,8 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
     let mut interest = Decimal::ZERO;
     let mut fees = Decimal::ZERO;
     let mut taxes = Decimal::ZERO;
+    let mut fx_impact = Decimal::ZERO;
+    let mut historical_fx_complete = true;
     let mut realized_complete = true;
     let mut realized_known = false;
     let mut dividend_complete = true;
@@ -978,6 +1190,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
 
     while let Some(row) = rows.next()? {
         let event_type: String = row.get(2)?;
+        let occurred_at: String = row.get(8)?;
         let amount = from_optional_parts(row.get(3)?, row.get(4)?)?.map(|value| value.abs());
         let currency: Option<String> = row.get(5)?;
         if currency
@@ -987,10 +1200,40 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
             foreign_activity = true;
         }
         if matches!(event_type.as_str(), "buy" | "sell") {
+            let instrument_id: Option<String> = row.get(1)?;
+            let mut native_amount = from_optional_parts(row.get(9)?, row.get(10)?)?;
+            let mut native_currency: Option<String> = row.get(11)?;
+            let mut broker_rate = from_optional_parts(row.get(12)?, row.get(13)?)?;
+            if native_amount.is_none()
+                && currency.as_deref() == Some(reporting_currency.as_str())
+                && let Some(instrument_id) = instrument_id.as_deref()
+            {
+                let inferred_currency: Option<String> = connection
+                    .query_row(
+                        "SELECT currency FROM market_prices WHERE instrument_id=?1",
+                        [instrument_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if let (Some(inferred_currency), Some(reporting_amount)) =
+                    (inferred_currency, amount)
+                    && inferred_currency != reporting_currency
+                    && let Some(rate) = historical_fx(
+                        connection,
+                        &inferred_currency,
+                        &reporting_currency,
+                        &occurred_at,
+                    )?
+                {
+                    native_amount = Some(reporting_amount / rate);
+                    native_currency = Some(inferred_currency);
+                    broker_rate = Some(rate);
+                }
+            }
             let (Some(instrument_id), Some(currency), Some(amount), Some(quantity)) = (
-                row.get::<_, Option<String>>(1)?,
-                currency,
-                amount,
+                instrument_id,
+                native_currency.or(currency),
+                native_amount.or(amount),
                 from_optional_parts(row.get(6)?, row.get(7)?)?.map(|value| value.abs()),
             ) else {
                 realized_complete = false;
@@ -1010,24 +1253,51 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
             if event_type == "buy" {
                 position.quantity += quantity;
                 position.cost_basis += amount;
+                if let Some(rate) = broker_rate.or(historical_fx(
+                    connection,
+                    &currency,
+                    &reporting_currency,
+                    &occurred_at,
+                )?) {
+                    position.reporting_cost_basis += amount * rate;
+                } else {
+                    historical_fx_complete = false;
+                    position.complete = false;
+                }
             } else if quantity > position.quantity || !position.complete {
                 position.complete = false;
                 realized_complete = false;
             } else {
                 let disposed_basis = position.cost_basis / position.quantity * quantity;
-                if !add_converted(
+                let disposed_reporting_basis =
+                    position.reporting_cost_basis / position.quantity * quantity;
+                if !add_converted_on(
                     connection,
                     &mut realized,
                     amount - disposed_basis,
                     &currency,
                     &reporting_currency,
+                    &occurred_at,
                 )? {
                     realized_complete = false;
                 } else {
                     realized_known = true;
                 }
+                if currency != reporting_currency {
+                    if let Some(sale_rate) = broker_rate.or(historical_fx(
+                        connection,
+                        &currency,
+                        &reporting_currency,
+                        &occurred_at,
+                    )?) {
+                        fx_impact += disposed_basis * sale_rate - disposed_reporting_basis;
+                    } else {
+                        historical_fx_complete = false;
+                    }
+                }
                 position.quantity -= quantity;
                 position.cost_basis -= disposed_basis;
+                position.reporting_cost_basis -= disposed_reporting_basis;
             }
             continue;
         }
@@ -1052,33 +1322,37 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
             continue;
         };
         let converted = match event_type.as_str() {
-            "dividend" => add_converted(
+            "dividend" => add_converted_on(
                 connection,
                 &mut dividends,
                 amount,
                 &currency,
                 &reporting_currency,
+                &occurred_at,
             )?,
-            "interest" => add_converted(
+            "interest" => add_converted_on(
                 connection,
                 &mut interest,
                 amount,
                 &currency,
                 &reporting_currency,
+                &occurred_at,
             )?,
-            "fee" => add_converted(
+            "fee" => add_converted_on(
                 connection,
                 &mut fees,
                 amount,
                 &currency,
                 &reporting_currency,
+                &occurred_at,
             )?,
-            "tax" => add_converted(
+            "tax" => add_converted_on(
                 connection,
                 &mut taxes,
                 amount,
                 &currency,
                 &reporting_currency,
+                &occurred_at,
             )?,
             _ => unreachable!(),
         };
@@ -1090,6 +1364,34 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                 "tax" => tax_complete = false,
                 _ => {}
             }
+        }
+    }
+
+    for ((_, _, currency), position) in &positions {
+        if currency != &reporting_currency && position.quantity > Decimal::ZERO {
+            if let Some((current_rate, _)) = fx(connection, currency, &reporting_currency)? {
+                fx_impact += position.cost_basis * current_rate - position.reporting_cost_basis;
+            } else {
+                historical_fx_complete = false;
+            }
+        }
+    }
+    for valued in &valuation.holdings {
+        let Some(price) = valued.price.as_ref() else {
+            continue;
+        };
+        if price.currency == reporting_currency {
+            continue;
+        }
+        let represented = positions
+            .keys()
+            .any(|(account_id, instrument_id, currency)| {
+                account_id == &valued.holding.account_id
+                    && instrument_id == &valued.holding.instrument_id
+                    && currency == &price.currency
+            });
+        if !represented {
+            historical_fx_complete = false;
         }
     }
 
@@ -1132,7 +1434,10 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         subtotal -= taxes;
         subtotal_known = true;
     }
-    let fx_complete = !foreign_activity;
+    let fx_complete = !foreign_activity || historical_fx_complete;
+    if fx_complete && foreign_activity {
+        subtotal += fx_impact;
+    }
     let total_return = (components_complete && fx_complete).then_some(subtotal);
     let mut notes = Vec::new();
     if coverage.0.is_none() {
@@ -1154,8 +1459,8 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
             "{unclassified_event_count} account event(s) need checking before Worthweave can calculate your full return."
         ));
     }
-    if foreign_activity {
-        notes.push("Some investments use another currency. Add exchange rates for the transaction dates before Worthweave can show your full return.".into());
+    if foreign_activity && !historical_fx_complete {
+        notes.push("Some investments use another currency. Worthweave will automatically fetch the missing transaction-date ECB rates.".into());
     }
     if coverage.0.is_some() {
         notes.push("These figures only cover the history you imported. Earlier activity may change the amount invested and gains from investments you sold.".into());
@@ -1179,7 +1484,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         interest: interest_complete.then(|| interest.normalize().to_string()),
         fees: fee_complete.then(|| fees.normalize().to_string()),
         taxes: tax_complete.then(|| taxes.normalize().to_string()),
-        fx_impact: fx_complete.then(|| "0".into()),
+        fx_impact: fx_complete.then(|| fx_impact.normalize().to_string()),
         attributed_subtotal: subtotal_known.then(|| subtotal.normalize().to_string()),
         total_return: total_return.map(|value| value.normalize().to_string()),
         notes,

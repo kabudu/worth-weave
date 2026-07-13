@@ -167,6 +167,11 @@ pub fn open(path: &Path) -> Result<Connection> {
            currency TEXT,
            quantity_coefficient TEXT,
            quantity_scale INTEGER,
+           native_amount_coefficient TEXT,
+           native_amount_scale INTEGER,
+           native_currency TEXT,
+           broker_fx_coefficient TEXT,
+           broker_fx_scale INTEGER,
            instrument_id TEXT,
            UNIQUE (account_id, source_id)
          );
@@ -187,6 +192,18 @@ pub fn open(path: &Path) -> Result<Connection> {
            source TEXT NOT NULL,
            PRIMARY KEY (base_currency, quote_currency)
          );
+         CREATE TABLE IF NOT EXISTS historical_fx_rates (
+           base_currency TEXT NOT NULL,
+           quote_currency TEXT NOT NULL,
+           rate_date TEXT NOT NULL,
+           rate_coefficient TEXT NOT NULL,
+           rate_scale INTEGER NOT NULL,
+           source TEXT NOT NULL,
+           fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           PRIMARY KEY (base_currency, quote_currency, rate_date)
+         );
+         CREATE INDEX IF NOT EXISTS idx_historical_fx_lookup
+           ON historical_fx_rates (base_currency, quote_currency, rate_date DESC);
          CREATE TABLE IF NOT EXISTS portfolio_snapshots (
            id TEXT PRIMARY KEY NOT NULL,
            captured_at TEXT NOT NULL,
@@ -250,6 +267,27 @@ pub fn open(path: &Path) -> Result<Connection> {
         if !exists {
             connection.execute_batch(&format!(
                 "ALTER TABLE app_settings ADD COLUMN {column} {definition}"
+            ))?;
+        }
+    }
+    for (column, definition) in [
+        ("native_amount_coefficient", "TEXT"),
+        ("native_amount_scale", "INTEGER"),
+        ("native_currency", "TEXT"),
+        ("broker_fx_coefficient", "TEXT"),
+        ("broker_fx_scale", "INTEGER"),
+    ] {
+        let exists = {
+            let mut statement = connection.prepare("PRAGMA table_info(events)")?;
+            statement
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+                .iter()
+                .any(|name| name == column)
+        };
+        if !exists {
+            connection.execute_batch(&format!(
+                "ALTER TABLE events ADD COLUMN {column} {definition}"
             ))?;
         }
     }

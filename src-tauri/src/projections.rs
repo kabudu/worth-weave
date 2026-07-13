@@ -536,8 +536,17 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
         }
     }
     let mut reconstructed_statement = connection.prepare(
-        "WITH dates AS (SELECT DISTINCT price_date FROM historical_prices)
-         SELECT dates.price_date, hp.price_coefficient, hp.price_scale, hp.currency,
+        "WITH daily_coverage AS (
+           SELECT price_date, COUNT(DISTINCT instrument_id) AS priced
+           FROM historical_prices GROUP BY price_date
+         ), coverage_window AS (
+           SELECT price_date, priced,
+             MAX(priced) OVER (ORDER BY price_date ROWS BETWEEN 20 PRECEDING AND 20 FOLLOWING) AS nearby_max
+           FROM daily_coverage
+         ), eligible_dates AS (
+           SELECT price_date FROM coverage_window WHERE priced * 5 >= nearby_max * 4
+         )
+         SELECT hp.price_date, hp.price_coefficient, hp.price_scale, hp.currency,
                 e.account_id, a.broker,
                 SUM(CASE
                   WHEN e.event_type='buy' THEN ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
@@ -548,24 +557,22 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
                   WHEN e.event_type='corporate_action' THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
                   WHEN e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%')
                     THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
-                  ELSE 0 END) AS quantity
-         FROM dates
-         JOIN events e ON substr(e.occurred_at,1,10)<=dates.price_date
+                  ELSE 0 END) AS quantity,
+                (SELECT EXISTS(SELECT 1 FROM coverage_window WHERE priced * 5 < nearby_max * 4)) AS has_coverage_gaps
+         FROM historical_prices hp
+         JOIN eligible_dates eligible ON eligible.price_date=hp.price_date
+         JOIN events e ON e.instrument_id=hp.instrument_id AND substr(e.occurred_at,1,10)<=hp.price_date
          JOIN accounts a ON a.id=e.account_id
-         LEFT JOIN historical_prices hp
-           ON hp.instrument_id=e.instrument_id AND hp.price_date=dates.price_date
          WHERE e.quantity_coefficient IS NOT NULL AND (
              e.event_type IN ('buy','sell','transfer','corporate_action')
              OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
          )
            AND NOT EXISTS (SELECT 1 FROM broker_position_snapshots bp
-             WHERE bp.account_id=e.account_id AND bp.report_date=dates.price_date
+             WHERE bp.account_id=e.account_id AND bp.report_date=hp.price_date
                AND bp.position_value_coefficient IS NOT NULL)
-         GROUP BY dates.price_date, e.instrument_id, e.account_id
-         HAVING quantity > 0 ORDER BY dates.price_date",
+         GROUP BY hp.price_date, hp.instrument_id, e.account_id
+         HAVING quantity > 0 ORDER BY hp.price_date",
     )?;
-    let mut reconstructed_totals: BTreeMap<String, Decimal> = BTreeMap::new();
-    let mut incomplete_dates = BTreeSet::new();
     let mut rows = reconstructed_statement.query([])?;
     while let Some(row) = rows.next()? {
         let account_id: String = row.get(4)?;
@@ -580,18 +587,15 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
             continue;
         }
         let date: String = row.get(0)?;
-        let Some(price) = exact(row.get(1)?, row.get(2)?) else {
-            incomplete_dates.insert(date);
-            continue;
-        };
-        let Some(currency) = row.get::<_, Option<String>>(3)? else {
-            incomplete_dates.insert(date);
-            continue;
-        };
+        let price = exact(row.get(1)?, row.get(2)?).unwrap_or_default();
+        let currency: String = row.get(3)?;
         if currency != reporting_currency {
             missing_conversion = true;
         }
         let quantity = Decimal::from_f64_retain(row.get::<_, f64>(6)?).unwrap_or_default();
+        if row.get::<_, bool>(7)? {
+            missing_conversion = true;
+        }
         match crate::market::convert_amount(
             connection,
             price * quantity,
@@ -599,21 +603,10 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
             &reporting_currency,
         )? {
             Some(converted) => {
-                *reconstructed_totals.entry(date).or_default() += converted;
+                *totals.entry(date).or_default() += converted;
                 reconstructed = true;
             }
-            None => {
-                incomplete_dates.insert(date);
-                missing_conversion = true;
-            }
-        }
-    }
-    if !incomplete_dates.is_empty() {
-        missing_conversion = true;
-    }
-    for (date, value) in reconstructed_totals {
-        if !incomplete_dates.contains(&date) {
-            *totals.entry(date).or_default() += value;
+            None => missing_conversion = true,
         }
     }
     if scope == "all" {

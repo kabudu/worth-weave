@@ -76,8 +76,8 @@ test("renders truthful empty portfolio state", async () => {
   expect(await screen.findByRole("heading", { name: /your wealth, in focus/i })).toBeInTheDocument();
   expect(await screen.findByText("Awaiting data")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /set up private ai in settings/i })).toBeEnabled();
-  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "list_holdings")).toBe(false);
-  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "list_accounts")).toBe(false);
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "list_holdings")).toBe(true);
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "list_accounts")).toBe(true);
 
   fireEvent.click(screen.getByRole("button", { name: "Portfolio" }));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_holdings"));

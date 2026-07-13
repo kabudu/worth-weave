@@ -71,8 +71,8 @@ export function App() {
     queryKey: ["portfolio-summary"],
     queryFn: ({ signal }) => getPortfolioSummary(signal), enabled: ready,
   });
-  const holdings = useQuery({ queryKey: ["holdings"], queryFn: ({ signal }) => getHoldings(signal), enabled: ready && activeView === "Portfolio" });
-  const accounts = useQuery({ queryKey: ["accounts"], queryFn: ({ signal }) => getAccounts(signal), enabled: ready && activeView === "Portfolio" });
+  const holdings = useQuery({ queryKey: ["holdings"], queryFn: ({ signal }) => getHoldings(signal), enabled: ready, staleTime: 5 * 60_000 });
+  const accounts = useQuery({ queryKey: ["accounts"], queryFn: ({ signal }) => getAccounts(signal), enabled: ready, staleTime: 5 * 60_000 });
   const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal), enabled: ready && activeView === "Activity" });
   const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal), enabled: ready && activeView === "Income" });
   const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal), enabled: ready && (activeView === "Overview" || activeView === "Portfolio") });
@@ -95,10 +95,10 @@ export function App() {
   }, [ready, fxRefresh]);
   const attribution = useQuery({ queryKey: ["total-return"], queryFn: ({ signal }) => getTotalReturnAttribution(signal), enabled: ready && activeView === "Portfolio" });
   const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal), enabled: ready && activeView === "Portfolio" });
-  const historyRefresh = useMutation({ mutationFn: refreshPortfolioHistory, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["performance"] }) });
+  const historyRefresh = useMutation({ mutationFn: refreshPortfolioHistory, onSuccess: (result) => result.updated > 0 ? queryClient.invalidateQueries({ queryKey: ["performance"] }) : undefined });
   useEffect(() => {
-    if (ready && activeView === "Portfolio" && historyRefresh.isIdle) historyRefresh.mutate();
-  }, [ready, activeView, historyRefresh]);
+    if (ready && historyRefresh.isIdle) historyRefresh.mutate();
+  }, [ready, historyRefresh]);
   const allocation = useQuery({ queryKey: ["allocation"], queryFn: ({ signal }) => getPortfolioAllocation(signal), retry: false, enabled: ready && activeView === "Portfolio" });
   const reconciliation = useQuery({ queryKey: ["reconciliation"], queryFn: ({ signal }) => getPortfolioReconciliation(signal), enabled: ready && activeView === "Portfolio" });
   const accountCount = summary.data?.account_count ?? 0;

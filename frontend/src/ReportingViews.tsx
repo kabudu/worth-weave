@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { capturePortfolioSnapshot, getPortfolioPerformance, type Account, type ActivityEvent, type AllocationReport, type CurrencyOption, type Holding, type IncomeSummary, type PerformanceHistory, type PortfolioSnapshot, type ReconciliationItem, type TotalReturnAttribution, type ValuationSummary } from "./api";
@@ -38,7 +38,27 @@ export function PortfolioView({ accounts, holdings, valuation, attribution, allo
   const queryClient = useQueryClient();
   const snapshotMutation = useMutation({ mutationFn: capturePortfolioSnapshot, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["snapshots"] }) });
   const historyScope = accountFilter !== "all" ? `account:${accountFilter}` : brokerFilter !== "all" ? `broker:${brokerFilter}` : "all";
-  const performance = useQuery({ queryKey: ["performance", historyScope], queryFn: ({ signal }) => getPortfolioPerformance(historyScope, signal) });
+  const performance = useQuery({ queryKey: ["performance", historyScope], queryFn: ({ signal }) => getPortfolioPerformance(historyScope, signal), staleTime: Infinity });
+  useEffect(() => {
+    const brokerScopes = (["trading_212", "ibkr", "robinhood"] as const)
+      .filter((broker) => holdings.some((holding) => holding.broker === broker))
+      .map((broker) => `broker:${broker}`);
+    const accountScopes = accounts
+      .filter((account) => holdings.some((holding) => holding.account_id === account.id))
+      .map((account) => `account:${account.id}`);
+    let cancelled = false;
+    void (async () => {
+      for (const scope of [...brokerScopes, ...accountScopes]) {
+        if (cancelled) return;
+        await queryClient.prefetchQuery({
+          queryKey: ["performance", scope],
+          queryFn: ({ signal }) => getPortfolioPerformance(scope, signal),
+          staleTime: Infinity,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [accounts, holdings, performance.dataUpdatedAt, queryClient]);
   const valued = new Map(valuation?.holdings.map((item) => [
     `${item.holding.account_id}-${item.holding.instrument_id}-${item.holding.currency}`,
     item,

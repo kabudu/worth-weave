@@ -952,7 +952,11 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
     let mut fees = Decimal::ZERO;
     let mut taxes = Decimal::ZERO;
     let mut realized_complete = true;
-    let mut cash_complete = true;
+    let mut realized_known = false;
+    let mut dividend_complete = true;
+    let mut interest_complete = true;
+    let mut fee_complete = true;
+    let mut tax_complete = true;
     let mut unclassified_event_count = 0usize;
     let mut foreign_activity = valuation.holdings.iter().any(|item| {
         item.price
@@ -1012,6 +1016,8 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                     &reporting_currency,
                 )? {
                     realized_complete = false;
+                } else {
+                    realized_known = true;
                 }
                 position.quantity -= quantity;
                 position.cost_basis -= disposed_basis;
@@ -1023,41 +1029,104 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
             || (event_type == "other" && amount.is_some())
         {
             unclassified_event_count += 1;
-            if event_type != "other" {
-                realized_complete = false;
-            } else {
-                cash_complete = false;
-            }
             continue;
         }
         if !matches!(event_type.as_str(), "dividend" | "interest" | "fee" | "tax") {
             continue;
         }
         let (Some(amount), Some(currency)) = (amount, currency) else {
-            cash_complete = false;
+            match event_type.as_str() {
+                "dividend" => dividend_complete = false,
+                "interest" => interest_complete = false,
+                "fee" => fee_complete = false,
+                "tax" => tax_complete = false,
+                _ => {}
+            }
             continue;
         };
-        let target = match event_type.as_str() {
-            "dividend" => &mut dividends,
-            "interest" => &mut interest,
-            "fee" => &mut fees,
-            "tax" => &mut taxes,
+        let converted = match event_type.as_str() {
+            "dividend" => add_converted(
+                connection,
+                &mut dividends,
+                amount,
+                &currency,
+                &reporting_currency,
+            )?,
+            "interest" => add_converted(
+                connection,
+                &mut interest,
+                amount,
+                &currency,
+                &reporting_currency,
+            )?,
+            "fee" => add_converted(
+                connection,
+                &mut fees,
+                amount,
+                &currency,
+                &reporting_currency,
+            )?,
+            "tax" => add_converted(
+                connection,
+                &mut taxes,
+                amount,
+                &currency,
+                &reporting_currency,
+            )?,
             _ => unreachable!(),
         };
-        if !add_converted(connection, target, amount, &currency, &reporting_currency)? {
-            cash_complete = false;
+        if !converted {
+            match event_type.as_str() {
+                "dividend" => dividend_complete = false,
+                "interest" => interest_complete = false,
+                "fee" => fee_complete = false,
+                "tax" => tax_complete = false,
+                _ => {}
+            }
         }
     }
 
-    let unrealized = valuation
+    let complete_unrealized = valuation
         .total_gain_loss
         .as_deref()
         .and_then(|value| Decimal::from_str(value).ok());
-    let components_complete = realized_complete && cash_complete && unrealized.is_some();
-    let subtotal = components_complete
-        .then(|| realized + unrealized.unwrap_or_default() + dividends + interest - fees - taxes);
+    let partial_unrealized = valuation
+        .holdings
+        .iter()
+        .filter_map(|item| item.gain_loss.as_deref())
+        .filter_map(|value| Decimal::from_str(value).ok())
+        .reduce(|total, value| total + value);
+    let unrealized = complete_unrealized.or(partial_unrealized);
+    let cash_complete = dividend_complete && interest_complete && fee_complete && tax_complete;
+    let components_complete = realized_complete && cash_complete && complete_unrealized.is_some();
+    let mut subtotal = Decimal::ZERO;
+    let mut subtotal_known = false;
+    if realized_known || realized_complete {
+        subtotal += realized;
+        subtotal_known = true;
+    }
+    if let Some(value) = unrealized {
+        subtotal += value;
+        subtotal_known = true;
+    }
+    if dividend_complete {
+        subtotal += dividends;
+        subtotal_known = true;
+    }
+    if interest_complete {
+        subtotal += interest;
+        subtotal_known = true;
+    }
+    if fee_complete {
+        subtotal -= fees;
+        subtotal_known = true;
+    }
+    if tax_complete {
+        subtotal -= taxes;
+        subtotal_known = true;
+    }
     let fx_complete = !foreign_activity;
-    let total_return = (components_complete && fx_complete).then(|| subtotal.unwrap_or_default());
+    let total_return = (components_complete && fx_complete).then_some(subtotal);
     let mut notes = Vec::new();
     if coverage.0.is_none() {
         notes.push("Import your account history to calculate your investment return.".into());
@@ -1065,7 +1134,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
     if !realized_complete {
         notes.push("Realised gains are unavailable where transaction history, quantities, amounts, or exchange rates are incomplete.".into());
     }
-    if unrealized.is_none() {
+    if complete_unrealized.is_none() {
         notes.push("To calculate gains on investments you still own, add your full account history, current prices and any missing exchange rates.".into());
     }
     if !cash_complete {
@@ -1096,14 +1165,15 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         coverage_start: coverage.0,
         coverage_end: coverage.1,
         status,
-        realized_gain_loss: realized_complete.then(|| realized.normalize().to_string()),
+        realized_gain_loss: (realized_complete || realized_known)
+            .then(|| realized.normalize().to_string()),
         unrealized_gain_loss: unrealized.map(|value| value.normalize().to_string()),
-        dividends: cash_complete.then(|| dividends.normalize().to_string()),
-        interest: cash_complete.then(|| interest.normalize().to_string()),
-        fees: cash_complete.then(|| fees.normalize().to_string()),
-        taxes: cash_complete.then(|| taxes.normalize().to_string()),
+        dividends: dividend_complete.then(|| dividends.normalize().to_string()),
+        interest: interest_complete.then(|| interest.normalize().to_string()),
+        fees: fee_complete.then(|| fees.normalize().to_string()),
+        taxes: tax_complete.then(|| taxes.normalize().to_string()),
         fx_impact: fx_complete.then(|| "0".into()),
-        attributed_subtotal: subtotal.map(|value| value.normalize().to_string()),
+        attributed_subtotal: subtotal_known.then(|| subtotal.normalize().to_string()),
         total_return: total_return.map(|value| value.normalize().to_string()),
         notes,
     })

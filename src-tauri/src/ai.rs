@@ -146,6 +146,7 @@ struct ChatRequest<'a> {
     model: &'a str,
     messages: Vec<ChatMessage<'a>>,
     temperature: f32,
+    max_tokens: u32,
 }
 
 #[derive(serde::Serialize)]
@@ -300,29 +301,54 @@ pub async fn explain(
     let user = format!("Question: {question}\n\nDeterministic analytics JSON:\n{analytics}");
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(1))
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(300))
         .build()
         .map_err(|error| WorthweaveError::LocalAi(error.to_string()))?;
     ensure_runtime(runtime, model, &base).await?;
-    let response = client
-        .post(url)
-        .json(&ChatRequest {
-            model,
-            messages: vec![
-                ChatMessage {
-                    role: "system",
-                    content: system,
-                },
-                ChatMessage {
-                    role: "user",
-                    content: &user,
-                },
-            ],
-            temperature: 0.1,
-        })
-        .send()
-        .await
-        .map_err(|error| WorthweaveError::LocalAi(format!("runtime is unavailable: {error}")))?;
+    let mut attempt = 0_u8;
+    let response = loop {
+        attempt += 1;
+        let result = client
+            .post(url.clone())
+            .json(&ChatRequest {
+                model,
+                messages: vec![
+                    ChatMessage {
+                        role: "system",
+                        content: system,
+                    },
+                    ChatMessage {
+                        role: "user",
+                        content: &user,
+                    },
+                ],
+                temperature: 0.1,
+                max_tokens: 800,
+            })
+            .send()
+            .await;
+        match result {
+            Ok(response)
+                if attempt < 3 && matches!(response.status().as_u16(), 429 | 502 | 503 | 504) =>
+            {
+                tokio::time::sleep(Duration::from_secs(u64::from(attempt) * 2)).await;
+                ensure_runtime(runtime, model, &base).await?;
+            }
+            Ok(response) => break response,
+            Err(error)
+                if attempt < 3
+                    && (error.is_connect() || error.is_timeout() || error.is_request()) =>
+            {
+                tokio::time::sleep(Duration::from_secs(u64::from(attempt) * 2)).await;
+                ensure_runtime(runtime, model, &base).await?;
+            }
+            Err(error) => {
+                return Err(WorthweaveError::LocalAi(format!(
+                    "the local model disconnected while answering. It is still on this Mac; please try again. ({error})"
+                )));
+            }
+        }
+    };
     if !response.status().is_success() {
         return Err(WorthweaveError::LocalAi(format!(
             "runtime returned HTTP {}",

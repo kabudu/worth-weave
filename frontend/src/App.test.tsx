@@ -94,9 +94,9 @@ test("renders truthful empty portfolio state", async () => {
 test("shows branded progress while core portfolio data is still loading", async () => {
   mockNativeCommands(true);
   const nativeImplementation = vi.mocked(invoke).getMockImplementation();
-  let finishHoldings: ((value: unknown[]) => void) | undefined;
+  let finishAttribution: ((value: unknown) => void) | undefined;
   vi.mocked(invoke).mockImplementation((command, args) => {
-    if (command === "list_holdings") return new Promise((resolve) => { finishHoldings = resolve; });
+    if (command === "portfolio_total_return") return new Promise((resolve) => { finishAttribution = resolve; });
     return nativeImplementation!(command, args);
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -107,7 +107,12 @@ test("shows branded progress while core portfolio data is still loading", async 
   expect(screen.getByRole("status", { name: "Loading portfolio" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /bringing your figures together/i })).toBeInTheDocument();
 
-  finishHoldings?.([]);
+  finishAttribution?.({
+    reporting_currency: "GBP", coverage_start: null, coverage_end: null, status: "unavailable",
+    realized_gain_loss: null, unrealized_gain_loss: null, dividends: null, interest: null,
+    fees: null, taxes: null, fx_impact: null, attributed_subtotal: null, total_return: null,
+    notes: ["Import your account history to calculate your investment return."],
+  });
   expect(await screen.findByRole("heading", { name: /your investments/i })).toBeInTheDocument();
 });
 

@@ -1118,37 +1118,55 @@ struct AttributionPosition {
     complete: bool,
 }
 
-fn historical_fx(
-    connection: &Connection,
-    base: &str,
-    quote: &str,
-    date: &str,
-) -> Result<Option<Decimal>> {
-    if base == quote {
-        return Ok(Some(Decimal::ONE));
+#[derive(Default)]
+struct HistoricalFxLookup {
+    rates: BTreeMap<(String, String), Vec<(String, Decimal)>>,
+}
+
+impl HistoricalFxLookup {
+    fn load(connection: &Connection) -> Result<Self> {
+        let mut lookup = Self::default();
+        let mut statement = connection.prepare(
+            "SELECT base_currency, quote_currency, rate_date, rate_coefficient, rate_scale
+             FROM historical_fx_rates ORDER BY base_currency, quote_currency, rate_date",
+        )?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let base: String = row.get(0)?;
+            let quote: String = row.get(1)?;
+            let date: String = row.get(2)?;
+            let rate = from_parts(row.get(3)?, row.get(4)?)?;
+            lookup
+                .rates
+                .entry((base, quote))
+                .or_default()
+                .push((date, rate));
+        }
+        Ok(lookup)
     }
-    let rate: Option<(String, u32)> = connection
-        .query_row(
-            "SELECT rate_coefficient, rate_scale FROM historical_fx_rates
-         WHERE base_currency=?1 AND quote_currency=?2 AND rate_date<=substr(?3,1,10)
-         ORDER BY rate_date DESC LIMIT 1",
-            params![base, quote, date],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    rate.map(|(coefficient, scale)| from_parts(coefficient, scale))
-        .transpose()
+
+    fn rate(&self, base: &str, quote: &str, date: &str) -> Option<Decimal> {
+        if base == quote {
+            return Some(Decimal::ONE);
+        }
+        let date = date.get(..10).unwrap_or(date);
+        let rates = self.rates.get(&(base.to_owned(), quote.to_owned()))?;
+        rates
+            .partition_point(|(rate_date, _)| rate_date.as_str() <= date)
+            .checked_sub(1)
+            .map(|index| rates[index].1)
+    }
 }
 
 fn add_converted_on(
-    connection: &Connection,
+    historical_fx: &HistoricalFxLookup,
     total: &mut Decimal,
     value: Decimal,
     currency: &str,
     reporting_currency: &str,
     occurred_at: &str,
 ) -> Result<bool> {
-    if let Some(rate) = historical_fx(connection, currency, reporting_currency, occurred_at)? {
+    if let Some(rate) = historical_fx.rate(currency, reporting_currency, occurred_at) {
         *total += value * rate;
         Ok(true)
     } else {
@@ -1168,6 +1186,17 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         .reporting_currency
         .unwrap_or_else(|| "GBP".into());
     let valuation = valuation(connection)?;
+    let historical_fx = HistoricalFxLookup::load(connection)?;
+    let mut market_currencies = BTreeMap::new();
+    let mut currency_statement =
+        connection.prepare("SELECT instrument_id, currency FROM market_prices")?;
+    let currency_rows = currency_statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    for row in currency_rows {
+        let (instrument_id, currency) = row?;
+        market_currencies.insert(instrument_id, currency);
+    }
     let coverage: (Option<String>, Option<String>) = connection.query_row(
         "SELECT MIN(coverage_start), MAX(coverage_end) FROM import_batches",
         [],
@@ -1228,22 +1257,12 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                 && currency.as_deref() == Some(reporting_currency.as_str())
                 && let Some(instrument_id) = instrument_id.as_deref()
             {
-                let inferred_currency: Option<String> = connection
-                    .query_row(
-                        "SELECT currency FROM market_prices WHERE instrument_id=?1",
-                        [instrument_id],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
+                let inferred_currency = market_currencies.get(instrument_id).cloned();
                 if let (Some(inferred_currency), Some(reporting_amount)) =
                     (inferred_currency, amount)
                     && inferred_currency != reporting_currency
-                    && let Some(rate) = historical_fx(
-                        connection,
-                        &inferred_currency,
-                        &reporting_currency,
-                        &occurred_at,
-                    )?
+                    && let Some(rate) =
+                        historical_fx.rate(&inferred_currency, &reporting_currency, &occurred_at)
                 {
                     native_amount = Some(reporting_amount / rate);
                     native_currency = Some(inferred_currency);
@@ -1273,12 +1292,9 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
             if event_type == "buy" {
                 position.quantity += quantity;
                 position.cost_basis += amount;
-                if let Some(rate) = broker_rate.or(historical_fx(
-                    connection,
-                    &currency,
-                    &reporting_currency,
-                    &occurred_at,
-                )?) {
+                if let Some(rate) =
+                    broker_rate.or(historical_fx.rate(&currency, &reporting_currency, &occurred_at))
+                {
                     position.reporting_cost_basis += amount * rate;
                     if currency != reporting_currency {
                         fx_impact_known = true;
@@ -1295,7 +1311,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                 let disposed_reporting_basis =
                     position.reporting_cost_basis / position.quantity * quantity;
                 if !add_converted_on(
-                    connection,
+                    &historical_fx,
                     &mut realized,
                     amount - disposed_basis,
                     &currency,
@@ -1307,12 +1323,11 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                     realized_known = true;
                 }
                 if currency != reporting_currency {
-                    if let Some(sale_rate) = broker_rate.or(historical_fx(
-                        connection,
+                    if let Some(sale_rate) = broker_rate.or(historical_fx.rate(
                         &currency,
                         &reporting_currency,
                         &occurred_at,
-                    )?) {
+                    )) {
                         fx_impact += disposed_basis * sale_rate - disposed_reporting_basis;
                         fx_impact_known = true;
                     } else {
@@ -1330,6 +1345,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
             || (event_type == "other" && amount.is_some())
         {
             unclassified_event_count += 1;
+            realized_complete = false;
             continue;
         }
         if !matches!(event_type.as_str(), "dividend" | "interest" | "fee" | "tax") {
@@ -1347,7 +1363,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         };
         let converted = match event_type.as_str() {
             "dividend" => add_converted_on(
-                connection,
+                &historical_fx,
                 &mut dividends,
                 amount,
                 &currency,
@@ -1355,7 +1371,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                 &occurred_at,
             )?,
             "interest" => add_converted_on(
-                connection,
+                &historical_fx,
                 &mut interest,
                 amount,
                 &currency,
@@ -1363,7 +1379,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                 &occurred_at,
             )?,
             "fee" => add_converted_on(
-                connection,
+                &historical_fx,
                 &mut fees,
                 amount,
                 &currency,
@@ -1371,7 +1387,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                 &occurred_at,
             )?,
             "tax" => add_converted_on(
-                connection,
+                &historical_fx,
                 &mut taxes,
                 amount,
                 &currency,
@@ -1482,7 +1498,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
     }
     if unclassified_event_count > 0 {
         notes.push(format!(
-            "{unclassified_event_count} account event(s) need checking before Worthweave can calculate your full return."
+            "{unclassified_event_count} corporate-action, transfer or adjustment event(s) are not yet included in return attribution. Current broker positions remain authoritative, but the return shown is partial."
         ));
     }
     if foreign_activity && !historical_fx_complete {

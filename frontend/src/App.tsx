@@ -123,6 +123,15 @@ export function App() {
   }, [ready, historyRefresh]);
   const allocation = useQuery({ queryKey: ["allocation"], queryFn: ({ signal }) => getPortfolioAllocation(signal), retry: false, enabled: ready && activeView === "Portfolio" });
   const reconciliation = useQuery({ queryKey: ["reconciliation"], queryFn: ({ signal }) => getPortfolioReconciliation(signal), enabled: ready && activeView === "Portfolio" });
+  const portfolioIsPreparing = activeView === "Portfolio" && [
+    accounts,
+    holdings,
+    valuation,
+    attribution,
+    allocation,
+    reconciliation,
+    snapshots,
+  ].some((query) => query.isPending);
   const accountCount = summary.data?.account_count ?? 0;
   const importCount = summary.data?.import_count ?? 0;
   const reportingCurrency = settings.data?.reporting_currency ?? "GBP";
@@ -182,7 +191,7 @@ export function App() {
 
         <UpdateBanner />
 
-        {activeView === "Portfolio" ? holdings.isPending || accounts.isPending ? <PortfolioLoading /> : <PortfolioView accounts={accounts.data ?? []} holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} attribution={attribution.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private AI</span><h1>Ask about your portfolio</h1><p>Get clear answers based on the figures already shown in Worthweave.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} onOpenSettings={() => setSettingsOpen(true)} /></section> : <>
+        {activeView === "Portfolio" ? portfolioIsPreparing ? <PortfolioLoading /> : <PortfolioView accounts={accounts.data ?? []} holdings={holdings.data ?? []} reconciliation={reconciliation.data ?? []} valuation={valuation.data} attribution={attribution.data} allocation={allocation.data} snapshots={snapshots.data ?? []} currencies={currencies.data} reportingCurrency={reportingCurrency} /> : activeView === "Activity" ? <ActivityView events={activity.data ?? []} /> : activeView === "Income" ? <IncomeView income={income.data ?? []} /> : activeView === "Insights" ? <section className="report-page insights-page"><header><span className="section-kicker">Private AI</span><h1>Ask about your portfolio</h1><p>Get clear answers based on the figures already shown in Worthweave.</p></header><InsightsCard configured={Boolean(settings.data.ai_runtime && settings.data.ai_model && settings.data.ai_endpoint)} onOpenSettings={() => setSettingsOpen(true)} /></section> : <>
         <section className="hero" aria-labelledby="welcome-title">
           <div>
             <p className="kicker">{dateLabel}</p>

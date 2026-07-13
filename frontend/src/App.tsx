@@ -108,7 +108,16 @@ export function App() {
   }, [ready, fxRefresh]);
   const attribution = useQuery({ queryKey: ["total-return"], queryFn: ({ signal }) => getTotalReturnAttribution(signal), enabled: ready && activeView === "Portfolio" });
   const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal), enabled: ready && activeView === "Portfolio" });
-  const historyRefresh = useMutation({ mutationFn: refreshPortfolioHistory, onSuccess: (result) => result.updated > 0 ? queryClient.invalidateQueries({ queryKey: ["performance"] }) : undefined });
+  const historyRefresh = useMutation({
+    mutationFn: refreshPortfolioHistory,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["performance"] }),
+        queryClient.invalidateQueries({ queryKey: ["valuation"] }),
+        queryClient.invalidateQueries({ queryKey: ["allocation"] }),
+      ]);
+    },
+  });
   useEffect(() => {
     if (ready && historyRefresh.isIdle) historyRefresh.mutate();
   }, [ready, historyRefresh]);

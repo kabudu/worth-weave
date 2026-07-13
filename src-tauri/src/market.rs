@@ -185,6 +185,25 @@ pub fn save_historical_prices(
             params![item.instrument_id, item.date, coefficient, scale, item.currency],
         )?;
     }
+    transaction.execute(
+        "INSERT INTO market_prices (instrument_id, price_coefficient, price_scale, currency, as_of, source)
+         SELECT hp.instrument_id, hp.price_coefficient, hp.price_scale, hp.currency,
+                hp.price_date || 'T00:00:00+00:00', 'yahoo_chart'
+         FROM historical_prices hp
+         JOIN (
+           SELECT instrument_id, MAX(price_date) AS price_date
+           FROM historical_prices WHERE source='yahoo_chart' GROUP BY instrument_id
+         ) latest ON latest.instrument_id=hp.instrument_id AND latest.price_date=hp.price_date
+         WHERE hp.source='yahoo_chart' AND hp.price_date>=date('now','-7 days')
+         ON CONFLICT(instrument_id) DO UPDATE SET
+           price_coefficient=excluded.price_coefficient,
+           price_scale=excluded.price_scale,
+           currency=excluded.currency,
+           as_of=excluded.as_of,
+           source=excluded.source
+         WHERE market_prices.source='yahoo_chart' AND excluded.as_of>=market_prices.as_of",
+        [],
+    )?;
     transaction.commit()?;
     Ok(crate::models::HistoryRefreshResult {
         requested,
@@ -1672,6 +1691,76 @@ mod tests {
         assert!("US0378331005".starts_with("US"));
         assert!(!"GB00B24CGK77".starts_with("US"));
         assert!(!"VGG7223M1005".starts_with("US"));
+    }
+
+    #[test]
+    fn yahoo_history_supplies_a_missing_current_price_without_replacing_manual_data() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        connection
+            .execute(
+                "INSERT INTO instruments (id, symbol) VALUES ('GB00TEST0001', 'TEST')",
+                [],
+            )
+            .expect("instrument");
+
+        save_historical_prices(
+            &connection,
+            vec![HistoryObservation {
+                instrument_id: "GB00TEST0001".into(),
+                date: Utc::now().date_naive().to_string(),
+                price: Decimal::from_str("1.23").expect("price"),
+                currency: "GBP".into(),
+            }],
+            1,
+        )
+        .expect("save Yahoo history");
+        let (quote, _) = price(&connection, "GB00TEST0001")
+            .expect("current price")
+            .expect("promoted Yahoo price");
+        assert_eq!(quote.price, "1.23");
+        assert_eq!(quote.currency, "GBP");
+        assert_eq!(quote.source, "yahoo_chart");
+
+        set_price(
+            &connection,
+            &SetPriceInput {
+                instrument_id: "GB00TEST0001".into(),
+                price: "9.99".into(),
+                currency: "GBP".into(),
+            },
+        )
+        .expect("manual price");
+        save_historical_prices(&connection, Vec::new(), 0).expect("promote cached history");
+        let (quote, _) = price(&connection, "GB00TEST0001")
+            .expect("current price")
+            .expect("manual price remains");
+        assert_eq!(quote.price, "9.99");
+        assert_eq!(quote.source, "manual");
+
+        connection
+            .execute(
+                "INSERT INTO instruments (id, symbol) VALUES ('GB00STALE001', 'STALE')",
+                [],
+            )
+            .expect("stale instrument");
+        save_historical_prices(
+            &connection,
+            vec![HistoryObservation {
+                instrument_id: "GB00STALE001".into(),
+                date: "2020-01-02".into(),
+                price: Decimal::from_str("4.56").expect("stale price"),
+                currency: "GBP".into(),
+            }],
+            1,
+        )
+        .expect("save stale Yahoo history");
+        assert!(
+            price(&connection, "GB00STALE001")
+                .expect("stale lookup")
+                .is_none(),
+            "old chart history must not masquerade as a current quote"
+        );
     }
 
     const ECB_FIXTURE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>

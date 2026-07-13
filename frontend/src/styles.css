@@ -438,3 +438,22 @@ footer { font-size:10px; }
 .dialog-close:focus-visible { outline:0;box-shadow:0 0 0 3px rgba(77,158,118,.22); }
 .search-select>button { top:7px;right:7px; }
 @media(max-width:600px){:root{--form-control-height:46px}.dialog-close{width:40px;height:40px}}
+
+/* Private AI has a distinct unavailable state while preserving the card theme. */
+.insight-card-disabled { background:linear-gradient(145deg,#122f28,#17372f);border:1px solid rgba(154,184,171,.14); }
+.insight-card-disabled .insight-glow { opacity:.28; }
+.insight-card-disabled .insight-title>span { background:rgba(255,255,255,.07);color:#8fa79d; }
+.insight-status { margin-left:auto;padding:6px 9px;border:1px solid rgba(200,218,210,.17);border-radius:999px;background:rgba(255,255,255,.055);color:#b5c6bf;font-size:10px;font-style:normal;font-weight:700;letter-spacing:.5px;text-transform:uppercase; }
+.insight-disabled-note { position:relative;display:grid;gap:4px;margin:22px 0 18px;padding:14px 16px;border-left:3px solid #82b29d;border-radius:0 10px 10px 0;background:rgba(255,255,255,.055); }
+.insight-disabled-note strong { color:#dce8e3;font-size:13px; }
+.insight-disabled-note span { color:#9fb3aa;font-size:12px;line-height:1.5; }
+.insight-controls { min-width:0; }
+.insight-card-disabled .insight-controls { opacity:.42; }
+.insight-card-disabled textarea:disabled,.insight-card-disabled .prompt-row button:disabled { cursor:not-allowed; }
+.insight-card-disabled textarea:disabled { border-style:dashed;background:rgba(255,255,255,.025);color:#a6b8b0; }
+.insight-card-disabled .prompt-row button:disabled { border-style:dashed;color:#8ca097; }
+.ai-setup-button { position:relative;display:flex;width:100%;min-height:58px;align-items:center;justify-content:space-between;margin-top:17px;padding:10px 14px;border:1px solid rgba(145,205,177,.28);border-radius:11px;background:#dcefe5;color:#143f32;text-align:left;cursor:pointer;transition:background .16s ease,box-shadow .16s ease,transform .14s ease; }
+.ai-setup-button:hover { background:#e8f6ed;box-shadow:0 10px 26px rgba(2,20,15,.18); }
+.ai-setup-button:active { transform:translateY(1px); }
+.ai-setup-button span,.ai-setup-button strong,.ai-setup-button small { display:block; }
+.ai-setup-button strong { font-size:13px; }.ai-setup-button small { margin-top:2px;color:#537066;font-size:10px; }.ai-setup-button b { font-size:20px;font-weight:500; }

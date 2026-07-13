@@ -50,6 +50,13 @@ test("completes accessible first-run onboarding", async ({ page }) => {
   expect(dashboardScan.violations).toEqual([]);
   await page.getByRole("button", { name: "Insights", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Ask about your portfolio" })).toBeVisible();
+  await expect(page.getByText("Not set up", { exact: true })).toBeVisible();
+  await expect(page.getByText("Private AI is currently off", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Your question")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Portfolio balance" })).toBeDisabled();
+  await page.getByRole("button", { name: /set up private ai/i }).click();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("button", { name: /import data/i }).click();
   await expect(page.getByRole("heading", { name: /import account history/i })).toBeVisible();
   const importLayout = await page.locator(".import-dialog").evaluate((dialog) => {

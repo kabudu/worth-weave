@@ -1169,6 +1169,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
     let mut fees = Decimal::ZERO;
     let mut taxes = Decimal::ZERO;
     let mut fx_impact = Decimal::ZERO;
+    let mut fx_impact_known = false;
     let mut historical_fx_complete = true;
     let mut realized_complete = true;
     let mut realized_known = false;
@@ -1260,6 +1261,9 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                     &occurred_at,
                 )?) {
                     position.reporting_cost_basis += amount * rate;
+                    if currency != reporting_currency {
+                        fx_impact_known = true;
+                    }
                 } else {
                     historical_fx_complete = false;
                     position.complete = false;
@@ -1291,6 +1295,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
                         &occurred_at,
                     )?) {
                         fx_impact += disposed_basis * sale_rate - disposed_reporting_basis;
+                        fx_impact_known = true;
                     } else {
                         historical_fx_complete = false;
                     }
@@ -1371,6 +1376,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         if currency != &reporting_currency && position.quantity > Decimal::ZERO {
             if let Some((current_rate, _)) = fx(connection, currency, &reporting_currency)? {
                 fx_impact += position.cost_basis * current_rate - position.reporting_cost_basis;
+                fx_impact_known = true;
             } else {
                 historical_fx_complete = false;
             }
@@ -1435,8 +1441,9 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         subtotal_known = true;
     }
     let fx_complete = !foreign_activity || historical_fx_complete;
-    if fx_complete && foreign_activity {
+    if foreign_activity && fx_impact_known {
         subtotal += fx_impact;
+        subtotal_known = true;
     }
     let total_return = (components_complete && fx_complete).then_some(subtotal);
     let mut notes = Vec::new();
@@ -1460,7 +1467,7 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         ));
     }
     if foreign_activity && !historical_fx_complete {
-        notes.push("Some investments use another currency. Worthweave will automatically fetch the missing transaction-date ECB rates.".into());
+        notes.push("Currency movement is calculated where imported cost basis and transaction-date exchange rates are available. Some holdings still lack enough broker history for complete FX attribution.".into());
     }
     if coverage.0.is_some() {
         notes.push("These figures only cover the history you imported. Earlier activity may change the amount invested and gains from investments you sold.".into());
@@ -1484,7 +1491,8 @@ pub fn total_return_attribution(connection: &Connection) -> Result<TotalReturnAt
         interest: interest_complete.then(|| interest.normalize().to_string()),
         fees: fee_complete.then(|| fees.normalize().to_string()),
         taxes: tax_complete.then(|| taxes.normalize().to_string()),
-        fx_impact: fx_complete.then(|| fx_impact.normalize().to_string()),
+        fx_impact: (!foreign_activity || fx_impact_known)
+            .then(|| fx_impact.normalize().to_string()),
         attributed_subtotal: subtotal_known.then(|| subtotal.normalize().to_string()),
         total_return: total_return.map(|value| value.normalize().to_string()),
         notes,

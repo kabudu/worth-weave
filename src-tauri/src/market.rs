@@ -22,6 +22,168 @@ const MAX_ECB_RESPONSE_BYTES: usize = 256 * 1024;
 const MASSIVE_API_BASE: &str = "https://api.massive.com";
 const MASSIVE_KEYCHAIN_SERVICE: &str = "app.worthweave.portfolio";
 const MASSIVE_KEYCHAIN_ACCOUNT: &str = "massive-api-key";
+const YAHOO_CHART_BASE: &str = "https://query1.finance.yahoo.com/v8/finance/chart";
+
+#[derive(Debug, Clone)]
+pub(crate) struct HistoryCandidate {
+    instrument_id: String,
+    yahoo_symbol: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct HistoryObservation {
+    instrument_id: String,
+    date: String,
+    price: Decimal,
+    currency: String,
+}
+
+pub fn history_candidates(connection: &Connection) -> Result<Vec<HistoryCandidate>> {
+    let mut statement = connection.prepare(
+        "SELECT DISTINCT i.id, i.symbol, i.isin
+         FROM instruments i JOIN events e ON e.instrument_id=i.id
+         WHERE i.symbol IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM historical_prices hp WHERE hp.instrument_id=i.id AND date(hp.fetched_at)=date('now'))
+         ORDER BY i.symbol LIMIT 300",
+    )?;
+    let rows = statement.query_map([], |row| {
+        let instrument_id: String = row.get(0)?;
+        let symbol: String = row.get(1)?;
+        let isin: Option<String> = row.get(2)?;
+        let yahoo_symbol = if isin.as_deref().is_some_and(|value| value.starts_with("GB")) {
+            format!("{symbol}.L")
+        } else {
+            symbol
+        };
+        Ok(HistoryCandidate {
+            instrument_id,
+            yahoo_symbol,
+        })
+    })?;
+    Ok(rows
+        .filter_map(std::result::Result::ok)
+        .filter(|candidate| valid_massive_symbol(&candidate.yahoo_symbol))
+        .collect())
+}
+
+async fn fetch_yahoo_candidate(
+    client: &reqwest::Client,
+    candidate: HistoryCandidate,
+) -> Vec<HistoryObservation> {
+    let url = format!(
+        "{YAHOO_CHART_BASE}/{}?period1=0&period2={}&interval=1d&events=history",
+        candidate.yahoo_symbol,
+        Utc::now().timestamp()
+    );
+    let Ok(response) = client
+        .get(url)
+        .header("User-Agent", "Worthweave/0.1 portfolio-history")
+        .send()
+        .await
+    else {
+        return Vec::new();
+    };
+    if !response.status().is_success() {
+        return Vec::new();
+    }
+    let Ok(json) = response.json::<Value>().await else {
+        return Vec::new();
+    };
+    let Some(result) = json.pointer("/chart/result/0") else {
+        return Vec::new();
+    };
+    let timestamps = result
+        .get("timestamp")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let closes = result
+        .pointer("/indicators/quote/0/close")
+        .or_else(|| result.pointer("/indicators/adjclose/0/adjclose"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut currency = result
+        .pointer("/meta/currency")
+        .and_then(Value::as_str)
+        .unwrap_or("USD")
+        .to_uppercase();
+    let divisor = if currency == "GBP" && candidate.yahoo_symbol.ends_with(".L") {
+        Decimal::from(100)
+    } else {
+        Decimal::ONE
+    };
+    if currency == "GBX" || currency == "GBPENCE" {
+        currency = "GBP".into();
+    }
+    timestamps
+        .into_iter()
+        .zip(closes)
+        .filter_map(|(timestamp, close)| {
+            let timestamp = timestamp.as_i64()?;
+            let price = Decimal::from_str(&close.as_f64()?.to_string()).ok()? / divisor;
+            let date = DateTime::from_timestamp(timestamp, 0)?
+                .format("%Y-%m-%d")
+                .to_string();
+            (price > Decimal::ZERO).then(|| HistoryObservation {
+                instrument_id: candidate.instrument_id.clone(),
+                date,
+                price,
+                currency: currency.clone(),
+            })
+        })
+        .collect()
+}
+
+pub async fn fetch_historical_prices(
+    candidates: Vec<HistoryCandidate>,
+) -> Result<Vec<HistoryObservation>> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(18))
+        .connect_timeout(Duration::from_secs(6))
+        .build()
+        .map_err(|_| {
+            WorthweaveError::InvalidMarketData("could not prepare historical market data".into())
+        })?;
+    let observations = stream::iter(candidates.into_iter().map(|candidate| {
+        let client = client.clone();
+        async move { fetch_yahoo_candidate(&client, candidate).await }
+    }))
+    .buffer_unordered(4)
+    .collect::<Vec<_>>()
+    .await;
+    Ok(observations.into_iter().flatten().collect())
+}
+
+pub fn save_historical_prices(
+    connection: &Connection,
+    observations: Vec<HistoryObservation>,
+    requested: usize,
+) -> Result<crate::models::HistoryRefreshResult> {
+    let available = observations
+        .iter()
+        .map(|item| item.instrument_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let mut updated = 0;
+    let transaction = connection.unchecked_transaction()?;
+    for item in observations {
+        let (coefficient, scale) = parts(item.price);
+        updated += transaction.execute(
+            "INSERT INTO historical_prices (instrument_id, price_date, price_coefficient, price_scale, currency, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'yahoo_chart')
+             ON CONFLICT(instrument_id, price_date) DO UPDATE SET price_coefficient=excluded.price_coefficient, price_scale=excluded.price_scale, currency=excluded.currency, source=excluded.source, fetched_at=CURRENT_TIMESTAMP",
+            params![item.instrument_id, item.date, coefficient, scale, item.currency],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(crate::models::HistoryRefreshResult {
+        requested,
+        updated,
+        unavailable: requested.saturating_sub(available),
+        source: "Yahoo Finance fallback",
+    })
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct MassiveCandidate {

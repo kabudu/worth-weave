@@ -202,6 +202,18 @@ async fn refresh_massive_prices(state: State<'_, AppState>) -> Result<MassiveRef
 }
 
 #[tauri::command]
+async fn refresh_portfolio_history(
+    state: State<'_, AppState>,
+) -> Result<crate::models::HistoryRefreshResult> {
+    let candidates = with_connection(&state, |connection| market::history_candidates(connection))?;
+    let requested = candidates.len();
+    let observations = market::fetch_historical_prices(candidates).await?;
+    with_connection(&state, |connection| {
+        market::save_historical_prices(connection, observations, requested)
+    })
+}
+
+#[tauri::command]
 fn update_instrument_metadata(
     input: UpdateInstrumentMetadataInput,
     state: State<'_, AppState>,
@@ -369,6 +381,7 @@ pub fn run() {
             save_massive_api_key,
             remove_massive_api_key,
             refresh_massive_prices,
+            refresh_portfolio_history,
             update_instrument_metadata,
             portfolio_valuation,
             portfolio_total_return,
@@ -734,6 +747,13 @@ mod tests {
             "stocks_and_shares_isa",
         )
         .expect("import");
+        connection.execute(
+            "INSERT INTO historical_prices (instrument_id, price_date, price_coefficient, price_scale, currency, source) VALUES ('US00SPLIT001', '2025-01-02', '2', 0, 'GBP', 'test')",
+            [],
+        ).expect("historical price");
+        let history = projections::performance_history(&connection, "all").expect("history");
+        assert_eq!(history.coverage, "market_reconstructed");
+        assert_eq!(history.points[0].value, "2256");
         let holdings = projections::holdings(&connection).expect("holdings");
         let split = holdings
             .iter()

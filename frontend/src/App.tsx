@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 
-import { capturePortfolioSnapshot, getAccounts, getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution, refreshFxRates } from "./api";
+import { capturePortfolioSnapshot, getAccounts, getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution, refreshFxRates, refreshPortfolioHistory } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
@@ -95,6 +95,10 @@ export function App() {
   }, [valuation.data?.missing_fx_count, valuation.data?.stale_fx_count, fxRefresh]);
   const attribution = useQuery({ queryKey: ["total-return"], queryFn: ({ signal }) => getTotalReturnAttribution(signal), enabled: ready && activeView === "Portfolio" });
   const snapshots = useQuery({ queryKey: ["snapshots"], queryFn: ({ signal }) => getPortfolioSnapshots(signal), enabled: ready && activeView === "Portfolio" });
+  const historyRefresh = useMutation({ mutationFn: refreshPortfolioHistory, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["performance"] }) });
+  useEffect(() => {
+    if (ready && activeView === "Portfolio" && historyRefresh.isIdle) historyRefresh.mutate();
+  }, [ready, activeView, historyRefresh]);
   const allocation = useQuery({ queryKey: ["allocation"], queryFn: ({ signal }) => getPortfolioAllocation(signal), retry: false, enabled: ready && activeView === "Portfolio" });
   const reconciliation = useQuery({ queryKey: ["reconciliation"], queryFn: ({ signal }) => getPortfolioReconciliation(signal), enabled: ready && activeView === "Portfolio" });
   const accountCount = summary.data?.account_count ?? 0;

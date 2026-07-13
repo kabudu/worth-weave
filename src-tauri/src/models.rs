@@ -277,6 +277,14 @@ pub struct PerformanceHistory {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct HistoryRefreshResult {
+    pub requested: usize,
+    pub updated: usize,
+    pub unavailable: usize,
+    pub source: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AllocationSlice {
     pub label: String,
     pub value: String,

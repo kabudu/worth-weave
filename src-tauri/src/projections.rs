@@ -432,6 +432,7 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
     let mut statement = connection.prepare(&sql)?;
     let mut totals: BTreeMap<String, Decimal> = BTreeMap::new();
     let mut missing_conversion = false;
+    let mut reconstructed = false;
     let mut consume = |row: &rusqlite::Row<'_>| -> rusqlite::Result<()> {
         let date: String = row.get(0)?;
         let coefficient: Option<String> = row.get(1)?;
@@ -456,12 +457,70 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
         while let Some(row) = rows.next()? {
             consume(row)?;
         }
+    }
+    let mut reconstructed_statement = connection.prepare(
+        "SELECT hp.price_date, hp.price_coefficient, hp.price_scale, hp.currency,
+                e.account_id, a.broker,
+                SUM(CASE
+                  WHEN e.event_type='buy' THEN ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
+                  WHEN e.event_type='sell' THEN -ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
+                  WHEN e.event_type='transfer' THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
+                  WHEN e.event_type='corporate_action' AND lower(e.description) LIKE '%stock split close%' THEN -ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
+                  WHEN e.event_type='corporate_action' AND lower(e.description) LIKE '%stock split open%' THEN ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
+                  WHEN e.event_type='corporate_action' THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
+                  ELSE 0 END) AS quantity
+         FROM historical_prices hp
+         JOIN events e ON e.instrument_id=hp.instrument_id AND substr(e.occurred_at,1,10)<=hp.price_date
+         JOIN accounts a ON a.id=e.account_id
+         WHERE e.quantity_coefficient IS NOT NULL AND e.event_type IN ('buy','sell','transfer','corporate_action')
+           AND NOT EXISTS (SELECT 1 FROM broker_position_snapshots bp
+             WHERE bp.account_id=e.account_id AND bp.report_date=hp.price_date
+               AND bp.position_value_coefficient IS NOT NULL)
+         GROUP BY hp.price_date, hp.instrument_id, e.account_id
+         HAVING quantity > 0 ORDER BY hp.price_date",
+    )?;
+    let mut rows = reconstructed_statement.query([])?;
+    while let Some(row) = rows.next()? {
+        let account_id: String = row.get(4)?;
+        let broker: String = row.get(5)?;
+        if scope
+            .strip_prefix("account:")
+            .is_some_and(|wanted| wanted != account_id)
+            || scope
+                .strip_prefix("broker:")
+                .is_some_and(|wanted| wanted != broker)
+        {
+            continue;
+        }
+        let date: String = row.get(0)?;
+        let price = exact(row.get(1)?, row.get(2)?).unwrap_or_default();
+        let currency: String = row.get(3)?;
+        if currency != reporting_currency {
+            missing_conversion = true;
+        }
+        let quantity = Decimal::from_f64_retain(row.get::<_, f64>(6)?).unwrap_or_default();
+        match crate::market::convert_amount(
+            connection,
+            price * quantity,
+            &currency,
+            &reporting_currency,
+        )? {
+            Some(converted) => {
+                *totals.entry(date).or_default() += converted;
+                reconstructed = true;
+            }
+            None => missing_conversion = true,
+        }
+    }
+    if scope == "all" {
         let mut snapshots = connection.prepare(
-            "SELECT substr(captured_at, 1, 10), total_coefficient, total_scale, reporting_currency FROM portfolio_snapshots ORDER BY captured_at"
+            "SELECT substr(captured_at, 1, 10), total_coefficient, total_scale FROM portfolio_snapshots ORDER BY captured_at"
         )?;
         let mut rows = snapshots.query([])?;
         while let Some(row) = rows.next()? {
-            consume(row)?;
+            if let Some(value) = exact(row.get(1)?, row.get(2)?) {
+                totals.insert(row.get(0)?, value);
+            }
         }
     }
     let points = totals
@@ -476,6 +535,8 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
         scope: scope.into(),
         coverage: if missing_conversion {
             "partial"
+        } else if reconstructed {
+            "market_reconstructed"
         } else {
             "broker_imports"
         },

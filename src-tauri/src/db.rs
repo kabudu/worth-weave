@@ -194,6 +194,17 @@ pub fn open(path: &Path) -> Result<Connection> {
            total_coefficient TEXT NOT NULL,
            total_scale INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS historical_prices (
+           instrument_id TEXT NOT NULL,
+           price_date TEXT NOT NULL,
+           price_coefficient TEXT NOT NULL,
+           price_scale INTEGER NOT NULL,
+           currency TEXT NOT NULL,
+           source TEXT NOT NULL,
+           fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           PRIMARY KEY (instrument_id, price_date)
+         );
+         CREATE INDEX IF NOT EXISTS idx_historical_prices_date ON historical_prices(price_date);
          CREATE TABLE IF NOT EXISTS broker_position_snapshots (
            id TEXT PRIMARY KEY NOT NULL,
            account_id TEXT NOT NULL REFERENCES accounts(id),

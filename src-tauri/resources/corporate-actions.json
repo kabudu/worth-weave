@@ -1,0 +1,12 @@
+[
+  {"id":"castor-2021-reverse-split","instrument_id":"MHY1146L2082","effective_date":"2021-05-28","numerator":1,"denominator":10},
+  {"id":"comsovereign-2023-reverse-split","instrument_id":"US2056504010","effective_date":"2023-02-10","numerator":1,"denominator":100},
+  {"id":"contextlogic-2023-reverse-split","instrument_id":"US21078F1093","effective_date":"2023-04-12","numerator":1,"denominator":30},
+  {"id":"cinovec-2023-reverse-split","instrument_id":"US1724063086","effective_date":"2023-06-09","numerator":1,"denominator":20},
+  {"id":"hepion-2023-reverse-split","instrument_id":"US4268974015","effective_date":"2023-05-11","numerator":1,"denominator":20},
+  {"id":"pavmed-2023-reverse-split","instrument_id":"US70387R5028","effective_date":"2023-12-07","numerator":1,"denominator":15},
+  {"id":"bimi-2022-reverse-split","instrument_id":"US05552Q3011","effective_date":"2022-12-12","numerator":1,"denominator":10},
+  {"id":"bini-2025-june-reverse-split","instrument_id":"US62526P8775","effective_date":"2025-06-02","numerator":1,"denominator":100},
+  {"id":"bini-2025-august-reverse-split","instrument_id":"US62526P8775","effective_date":"2025-08-04","numerator":1,"denominator":250},
+  {"id":"bini-2025-september-reverse-split","instrument_id":"US62526P8775","effective_date":"2025-09-22","numerator":1,"denominator":250}
+]

@@ -2,9 +2,10 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::error::Result;
+use crate::error::{Result, WorthweaveError};
 use crate::models::{
     Account, AppSettings, CreateAccountInput, CurrencyOption, PortfolioSummary, UpdateSettingsInput,
 };
@@ -101,6 +102,15 @@ pub struct AppState {
     pub connection: Mutex<Connection>,
 }
 
+#[derive(Deserialize)]
+struct BundledCorporateAction {
+    id: String,
+    instrument_id: String,
+    effective_date: String,
+    numerator: i64,
+    denominator: i64,
+}
+
 pub fn open(path: &Path) -> Result<Connection> {
     let connection = Connection::open(path)?;
     #[cfg(unix)]
@@ -175,6 +185,17 @@ pub fn open(path: &Path) -> Result<Connection> {
            instrument_id TEXT,
            UNIQUE (account_id, source_id)
          );
+         CREATE TABLE IF NOT EXISTS corporate_action_adjustments (
+           id TEXT PRIMARY KEY NOT NULL,
+           instrument_id TEXT NOT NULL,
+           effective_date TEXT NOT NULL,
+           numerator INTEGER NOT NULL CHECK (numerator > 0),
+           denominator INTEGER NOT NULL CHECK (denominator > 0),
+           source TEXT NOT NULL,
+           UNIQUE (instrument_id, effective_date, numerator, denominator)
+         );
+         CREATE INDEX IF NOT EXISTS idx_corporate_action_adjustments_lookup
+           ON corporate_action_adjustments (instrument_id, effective_date);
          CREATE TABLE IF NOT EXISTS market_prices (
            instrument_id TEXT PRIMARY KEY NOT NULL,
            price_coefficient TEXT NOT NULL,
@@ -358,13 +379,31 @@ pub fn open(path: &Path) -> Result<Connection> {
            (3, 'broker_reconciliation_and_instruments'),
            (4, 'instrument_classification'),
            (5, 'reporting_indexes'),
-           (6, 'region_aware_broker_accounts');
-         PRAGMA user_version = 6;",
+           (6, 'region_aware_broker_accounts'),
+           (7, 'generic_corporate_action_metadata');
+         PRAGMA user_version = 7;",
     )?;
+    let bundled: Vec<BundledCorporateAction> =
+        serde_json::from_str(include_str!("../resources/corporate-actions.json"))
+            .map_err(|error| WorthweaveError::InvalidMarketData(error.to_string()))?;
+    for action in bundled {
+        connection.execute(
+            "INSERT OR IGNORE INTO corporate_action_adjustments
+             (id, instrument_id, effective_date, numerator, denominator, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'bundled_verified_metadata')",
+            params![
+                action.id,
+                action.instrument_id,
+                action.effective_date,
+                action.numerator,
+                action.denominator
+            ],
+        )?;
+    }
     Ok(connection)
 }
 
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 #[cfg(test)]
 pub fn schema_version(connection: &Connection) -> Result<i64> {

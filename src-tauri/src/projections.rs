@@ -61,102 +61,63 @@ struct Position {
     asset_class: Option<String>,
     sector: Option<String>,
     geography: Option<String>,
-    applied_adjustments: BTreeSet<&'static str>,
+    applied_adjustments: BTreeSet<String>,
 }
 
-// Some Trading 212 activity exports omit corporate-action rows while mixing
-// pre-action purchases with post-action sales. Keep verified adjustments here
-// until the broker supplies them in its export format.
-const VERIFIED_QUANTITY_ADJUSTMENTS: [(&str, &str, &str, i64, i64); 10] = [
-    (
-        "castor-2021-reverse-split",
-        "MHY1146L2082",
-        "2021-05-28",
-        1,
-        10,
-    ),
-    (
-        "comsovereign-2023-reverse-split",
-        "US2056504010",
-        "2023-02-10",
-        1,
-        100,
-    ),
-    (
-        "contextlogic-2023-reverse-split",
-        "US21078F1093",
-        "2023-04-12",
-        1,
-        30,
-    ),
-    (
-        "cinovec-2023-reverse-split",
-        "US1724063086",
-        "2023-06-09",
-        1,
-        20,
-    ),
-    (
-        "hepion-2023-reverse-split",
-        "US4268974015",
-        "2023-05-11",
-        1,
-        20,
-    ),
-    (
-        "pavmed-2023-reverse-split",
-        "US70387R5028",
-        "2023-12-07",
-        1,
-        15,
-    ),
-    (
-        "bimi-2022-reverse-split",
-        "US05552Q3011",
-        "2022-12-12",
-        1,
-        10,
-    ),
-    (
-        "bini-2025-june-reverse-split",
-        "US62526P8775",
-        "2025-06-02",
-        1,
-        100,
-    ),
-    (
-        "bini-2025-august-reverse-split",
-        "US62526P8775",
-        "2025-08-04",
-        1,
-        250,
-    ),
-    (
-        "bini-2025-september-reverse-split",
-        "US62526P8775",
-        "2025-09-22",
-        1,
-        250,
-    ),
-];
+#[derive(Clone)]
+struct QuantityAdjustment {
+    id: String,
+    effective_date: String,
+    numerator: i64,
+    denominator: i64,
+}
 
-fn apply_verified_quantity_adjustments(
+fn apply_quantity_adjustments(
+    adjustments: &BTreeMap<String, Vec<QuantityAdjustment>>,
     instrument_id: &str,
     occurred_at: &str,
+    represented_by_event: bool,
     position: &mut Position,
 ) {
-    for (id, adjusted_instrument, effective_date, numerator, denominator) in
-        VERIFIED_QUANTITY_ADJUSTMENTS
-    {
-        if instrument_id == adjusted_instrument
-            && occurred_at >= effective_date
-            && position.applied_adjustments.insert(id)
-        {
-            position.quantity = (position.quantity * Decimal::from(numerator)
-                / Decimal::from(denominator))
+    if let Some(actions) = adjustments.get(instrument_id) {
+        for action in actions {
+            if occurred_at < action.effective_date.as_str()
+                || !position.applied_adjustments.insert(action.id.clone())
+                || represented_by_event
+            {
+                continue;
+            }
+            position.quantity = (position.quantity * Decimal::from(action.numerator)
+                / Decimal::from(action.denominator))
             .round_dp(8);
         }
     }
+}
+
+fn quantity_adjustments(
+    connection: &Connection,
+) -> Result<BTreeMap<String, Vec<QuantityAdjustment>>> {
+    let mut statement = connection.prepare(
+        "SELECT id, instrument_id, effective_date, numerator, denominator
+         FROM corporate_action_adjustments ORDER BY instrument_id, effective_date, id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(1)?,
+            QuantityAdjustment {
+                id: row.get(0)?,
+                effective_date: row.get(2)?,
+                numerator: row.get(3)?,
+                denominator: row.get(4)?,
+            },
+        ))
+    })?;
+    let mut result: BTreeMap<String, Vec<QuantityAdjustment>> = BTreeMap::new();
+    for row in rows {
+        let (instrument_id, action) = row?;
+        result.entry(instrument_id).or_default().push(action);
+    }
+    Ok(result)
 }
 
 fn is_position_corporate_action(event_type: &str, description: &str) -> bool {
@@ -185,6 +146,7 @@ fn predecessor_instrument_id(description: &str, current_instrument_id: &str) -> 
 }
 
 fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
+    let adjustments = quantity_adjustments(connection)?;
     let mut statement = connection.prepare(
         "SELECT e.account_id, a.display_name, a.broker, e.instrument_id, e.event_type,
                 e.amount_coefficient, e.amount_scale, e.currency,
@@ -274,7 +236,13 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
                 geography,
                 ..Position::default()
             });
-        apply_verified_quantity_adjustments(&instrument_id, &occurred_at, position);
+        apply_quantity_adjustments(
+            &adjustments,
+            &instrument_id,
+            &occurred_at,
+            is_corporate_action,
+            position,
+        );
         if is_corporate_action {
             let description = description.to_lowercase();
             if description.contains("stock split open") {
@@ -319,7 +287,7 @@ fn ledger_holdings(connection: &Connection) -> Result<Vec<Holding>> {
         }
     }
     for ((_, instrument_id, _), position) in &mut positions {
-        apply_verified_quantity_adjustments(instrument_id, "9999-12-31", position);
+        apply_quantity_adjustments(&adjustments, instrument_id, "9999-12-31", false, position);
     }
     Ok(positions
         .into_iter()
@@ -499,13 +467,14 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
         .reporting_currency
         .unwrap_or_else(|| "GBP".into());
     let signature: String = connection.query_row(
-        "SELECT printf('history-v5|%s|%s|%s|%s|%s|%s|%s',
+        "SELECT printf('history-v6|%s|%s|%s|%s|%s|%s|%s|%s',
            ?1,
            (SELECT COUNT(*) || ':' || COALESCE(MAX(imported_at),'') FROM import_batches),
            (SELECT COUNT(*) || ':' || COALESCE(MAX(fetched_at),'') FROM historical_prices),
            (SELECT COUNT(*) || ':' || COALESCE(MAX(as_of),'') FROM market_prices),
            (SELECT COUNT(*) || ':' || COALESCE(MAX(as_of),'') FROM fx_rates),
            (SELECT COUNT(*) || ':' || COALESCE(MAX(report_date),'') FROM broker_position_snapshots),
+           (SELECT COUNT(*) || ':' || COALESCE(MAX(effective_date),'') FROM corporate_action_adjustments),
            date('now'))",
         [reporting_currency.as_str()],
         |row| row.get(0),
@@ -612,20 +581,31 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
                   WHEN e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%')
                     THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
                   ELSE 0 END) *
-                  CASE
-                    WHEN e.instrument_id='MHY1146L2082' THEN CASE WHEN substr(e.occurred_at,1,10)<'2021-05-28' AND hp.price_date>='2021-05-28' THEN 0.1 ELSE 1 END
-                    WHEN e.instrument_id='US2056504010' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-02-10' AND hp.price_date>='2023-02-10' THEN 0.01 ELSE 1 END
-                    WHEN e.instrument_id='US21078F1093' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-04-12' AND hp.price_date>='2023-04-12' THEN (1.0/30.0) ELSE 1 END
-                    WHEN e.instrument_id='US1724063086' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-06-09' AND hp.price_date>='2023-06-09' THEN 0.05 ELSE 1 END
-                    WHEN e.instrument_id='US4268974015' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-05-11' AND hp.price_date>='2023-05-11' THEN 0.05 ELSE 1 END
-                    WHEN e.instrument_id='US70387R5028' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-12-07' AND hp.price_date>='2023-12-07' THEN (1.0/15.0) ELSE 1 END
-                    WHEN e.instrument_id='US05552Q3011' THEN CASE WHEN substr(e.occurred_at,1,10)<'2022-12-12' AND hp.price_date>='2022-12-12' THEN 0.1 ELSE 1 END
-                    WHEN e.instrument_id='US62526P8775' THEN
-                      (CASE WHEN substr(e.occurred_at,1,10)<'2025-06-02' AND hp.price_date>='2025-06-02' THEN 0.01 ELSE 1 END) *
-                      (CASE WHEN substr(e.occurred_at,1,10)<'2025-08-04' AND hp.price_date>='2025-08-04' THEN 0.004 ELSE 1 END) *
-                      (CASE WHEN substr(e.occurred_at,1,10)<'2025-09-22' AND hp.price_date>='2025-09-22' THEN 0.004 ELSE 1 END)
-                    ELSE 1
-                  END) AS quantity,
+                  COALESCE((WITH RECURSIVE
+                    applicable(row_number, numerator, denominator) AS (
+                      SELECT ROW_NUMBER() OVER (ORDER BY action.effective_date, action.id),
+                             action.numerator, action.denominator
+                      FROM corporate_action_adjustments action
+                      WHERE action.instrument_id=e.instrument_id
+                        AND substr(e.occurred_at,1,10)<action.effective_date
+                        AND hp.price_date>=action.effective_date
+                        AND NOT EXISTS (
+                          SELECT 1 FROM events represented
+                          WHERE represented.account_id=e.account_id
+                            AND represented.instrument_id=e.instrument_id
+                            AND substr(represented.occurred_at,1,10)=action.effective_date
+                            AND (represented.event_type='corporate_action'
+                              OR (represented.event_type='other' AND lower(represented.description) LIKE '%split%'))
+                        )
+                    ), product(row_number, value) AS (
+                      VALUES(0, 1.0)
+                      UNION ALL
+                      SELECT product.row_number + 1,
+                             product.value * applicable.numerator / applicable.denominator
+                      FROM product JOIN applicable
+                        ON applicable.row_number=product.row_number + 1
+                    )
+                    SELECT value FROM product ORDER BY row_number DESC LIMIT 1), 1)) AS quantity,
                 (SELECT EXISTS(SELECT 1 FROM coverage_window WHERE priced * 5 < nearby_max * 4)) AS has_coverage_gaps
          FROM historical_prices hp
          JOIN eligible_dates eligible ON eligible.price_date=hp.price_date
@@ -637,14 +617,10 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
              e.event_type IN ('buy','sell','transfer','corporate_action')
              OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
          )
-           AND NOT (i.symbol IN ('PHE','PREM') AND hp.currency<>'GBP')
+           AND NOT ((COALESCE(i.isin,'') LIKE 'GB%' OR i.id LIKE 'GB%') AND hp.currency<>'GBP')
            AND (costs.max_unit_cost IS NULL OR
              CAST(hp.price_coefficient AS REAL) * CAST('1e-' || hp.price_scale AS REAL) <= costs.max_unit_cost * 10
              OR EXISTS (SELECT 1 FROM events action WHERE action.instrument_id=e.instrument_id AND action.event_type='corporate_action'))
-           AND e.instrument_id NOT IN (
-             'MHY1146L2082','US2056504010','US21078F1093','US1724063086',
-             'US4268974015','US70387R5028','US05552Q3011','US62526P8775'
-           )
            AND NOT EXISTS (SELECT 1 FROM broker_position_snapshots bp
              WHERE bp.account_id=e.account_id AND bp.report_date=hp.price_date
                AND bp.position_value_coefficient IS NOT NULL)
@@ -846,7 +822,7 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE accounts (id TEXT PRIMARY KEY, display_name TEXT, broker TEXT);
                  CREATE TABLE app_settings (id INTEGER PRIMARY KEY, reporting_currency TEXT, onboarding_complete INTEGER, ai_onboarding_complete INTEGER, ai_runtime TEXT, ai_model TEXT, ai_endpoint TEXT);
-                 CREATE TABLE instruments (id TEXT PRIMARY KEY, symbol TEXT, name TEXT, asset_class TEXT, sector TEXT, geography TEXT);
+                 CREATE TABLE instruments (id TEXT PRIMARY KEY, symbol TEXT, name TEXT, isin TEXT, asset_class TEXT, sector TEXT, geography TEXT);
                  CREATE TABLE events (
                    id TEXT PRIMARY KEY, account_id TEXT, instrument_id TEXT, event_type TEXT,
                    amount_coefficient TEXT, amount_scale INTEGER, currency TEXT,
@@ -859,6 +835,7 @@ mod tests {
                  CREATE TABLE market_prices (instrument_id TEXT, price_coefficient TEXT, price_scale INTEGER, currency TEXT, as_of TEXT, source TEXT);
                  CREATE TABLE fx_rates (base_currency TEXT, quote_currency TEXT, rate_coefficient TEXT, rate_scale INTEGER, as_of TEXT, source TEXT);
                  CREATE TABLE performance_history_cache (scope TEXT PRIMARY KEY, signature TEXT, payload TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
+                 CREATE TABLE corporate_action_adjustments (id TEXT PRIMARY KEY, instrument_id TEXT, effective_date TEXT, numerator INTEGER, denominator INTEGER, source TEXT);
                  INSERT INTO app_settings VALUES (1, 'USD', 1, 0, NULL, NULL, NULL);
                  INSERT INTO accounts VALUES ('account', 'IBKR ISA', 'ibkr');",
             )
@@ -900,13 +877,34 @@ mod tests {
 
     #[test]
     fn verified_reverse_split_normalizes_pre_split_quantity_once() {
+        let adjustments = BTreeMap::from([(
+            "US21078F1093".to_string(),
+            vec![QuantityAdjustment {
+                id: "contextlogic-2023-reverse-split".to_string(),
+                effective_date: "2023-04-12".to_string(),
+                numerator: 1,
+                denominator: 30,
+            }],
+        )]);
         let mut position = Position {
             quantity: Decimal::from(5095),
             ..Position::default()
         };
-        apply_verified_quantity_adjustments("US21078F1093", "2024-02-21T19:26:36", &mut position);
+        apply_quantity_adjustments(
+            &adjustments,
+            "US21078F1093",
+            "2024-02-21T19:26:36",
+            false,
+            &mut position,
+        );
         assert_eq!(position.quantity.to_string(), "169.83333333");
-        apply_verified_quantity_adjustments("US21078F1093", "2025-06-02T14:45:45", &mut position);
+        apply_quantity_adjustments(
+            &adjustments,
+            "US21078F1093",
+            "2025-06-02T14:45:45",
+            false,
+            &mut position,
+        );
         assert_eq!(position.quantity.to_string(), "169.83333333");
         position.quantity -= "0.83333333".parse::<Decimal>().expect("fractional sale");
         position.quantity -= Decimal::from(169);
@@ -915,20 +913,70 @@ mod tests {
 
     #[test]
     fn adjustment_after_final_transaction_is_applied_during_projection() {
+        let adjustments = BTreeMap::from([(
+            "US62526P8775".to_string(),
+            vec![
+                QuantityAdjustment {
+                    id: "one".into(),
+                    effective_date: "2025-06-02".into(),
+                    numerator: 1,
+                    denominator: 100,
+                },
+                QuantityAdjustment {
+                    id: "two".into(),
+                    effective_date: "2025-08-04".into(),
+                    numerator: 1,
+                    denominator: 250,
+                },
+                QuantityAdjustment {
+                    id: "three".into(),
+                    effective_date: "2025-09-22".into(),
+                    numerator: 1,
+                    denominator: 250,
+                },
+            ],
+        )]);
         let mut position = Position {
             quantity: Decimal::from(105),
             ..Position::default()
         };
-        apply_verified_quantity_adjustments("US62526P8775", "9999-12-31", &mut position);
+        apply_quantity_adjustments(
+            &adjustments,
+            "US62526P8775",
+            "9999-12-31",
+            false,
+            &mut position,
+        );
         assert_eq!(position.quantity.to_string(), "0.0000168");
     }
 
     #[test]
     fn adjustment_before_first_transaction_does_not_change_later_purchase() {
+        let adjustments = BTreeMap::from([(
+            "US05552Q3011".to_string(),
+            vec![QuantityAdjustment {
+                id: "split".into(),
+                effective_date: "2022-12-12".into(),
+                numerator: 1,
+                denominator: 10,
+            }],
+        )]);
         let mut position = Position::default();
-        apply_verified_quantity_adjustments("US05552Q3011", "2023-01-01", &mut position);
+        apply_quantity_adjustments(
+            &adjustments,
+            "US05552Q3011",
+            "2023-01-01",
+            false,
+            &mut position,
+        );
         position.quantity += Decimal::from(12);
-        apply_verified_quantity_adjustments("US05552Q3011", "9999-12-31", &mut position);
+        apply_quantity_adjustments(
+            &adjustments,
+            "US05552Q3011",
+            "9999-12-31",
+            false,
+            &mut position,
+        );
         assert_eq!(position.quantity, Decimal::from(12));
     }
 

@@ -103,6 +103,77 @@ fn exact_value(value: Decimal, minimum_scale: Option<u32>) -> ExactValue {
     }
 }
 
+fn imported_corporate_action_adjustments(events: &[Event]) -> Vec<(String, String, i64, i64)> {
+    let mut actions = std::collections::BTreeSet::new();
+    let mut legs: HashMap<(String, String), (Option<Decimal>, Option<Decimal>)> = HashMap::new();
+    for event in events {
+        let Some(instrument_id) = event.instrument_id.as_ref() else {
+            continue;
+        };
+        let date = event.occurred_at.chars().take(10).collect::<String>();
+        let lower = event.description.to_ascii_lowercase();
+        let quantity =
+            event.quantity.as_ref().and_then(|value| {
+                value.coefficient.parse::<i128>().ok().map(|coefficient| {
+                    Decimal::from_i128_with_scale(coefficient, value.scale).abs()
+                })
+            });
+        if lower.contains("stock split close") {
+            legs.entry((instrument_id.clone(), date)).or_default().0 = quantity;
+            continue;
+        }
+        if lower.contains("stock split open") {
+            legs.entry((instrument_id.clone(), date)).or_default().1 = quantity;
+            continue;
+        }
+        let words = event
+            .description
+            .split(|character: char| !character.is_ascii_alphanumeric() && character != '.')
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>();
+        for window in words.windows(4) {
+            if window[0].eq_ignore_ascii_case("split")
+                && window[2].eq_ignore_ascii_case("for")
+                && let (Ok(numerator), Ok(denominator)) =
+                    (window[1].parse::<i64>(), window[3].parse::<i64>())
+                && numerator > 0
+                && denominator > 0
+            {
+                actions.insert((instrument_id.clone(), date.clone(), numerator, denominator));
+            }
+        }
+    }
+    for ((instrument_id, date), (close, open)) in legs {
+        let (Some(close), Some(open)) = (close, open) else {
+            continue;
+        };
+        if close.is_zero() || open.is_zero() {
+            continue;
+        }
+        let ratio = (open / close).normalize();
+        let Some(mut numerator) = i64::try_from(ratio.mantissa()).ok() else {
+            continue;
+        };
+        let Some(mut denominator) = 10_i64.checked_pow(ratio.scale()) else {
+            continue;
+        };
+        let divisor = gcd(numerator.unsigned_abs(), denominator.unsigned_abs()) as i64;
+        numerator /= divisor;
+        denominator /= divisor;
+        if numerator > 0 && denominator > 0 {
+            actions.insert((instrument_id, date, numerator, denominator));
+        }
+    }
+    actions.into_iter().collect()
+}
+
+fn gcd(mut left: u64, mut right: u64) -> u64 {
+    while right != 0 {
+        (left, right) = (right, left % right);
+    }
+    left.max(1)
+}
+
 fn currency_scale(currency: &str) -> u32 {
     match currency {
         "BHD" | "IQD" | "JOD" | "KWD" | "LYD" | "OMR" | "TND" => 3,
@@ -730,6 +801,17 @@ pub fn import_csv(
                 params![account_id, event.source_id, event.instrument_id],
             )?;
         }
+    }
+    for (instrument_id, effective_date, numerator, denominator) in
+        imported_corporate_action_adjustments(&new_events)
+    {
+        let id = format!("imported:{instrument_id}:{effective_date}:{numerator}:{denominator}");
+        transaction.execute(
+            "INSERT OR IGNORE INTO corporate_action_adjustments
+             (id, instrument_id, effective_date, numerator, denominator, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'broker_import')",
+            params![id, instrument_id, effective_date, numerator, denominator],
+        )?;
     }
     for position in &parsed.positions {
         transaction.execute(

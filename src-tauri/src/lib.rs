@@ -537,7 +537,10 @@ mod tests {
         let connection = db::open(&path).expect("migrated database");
         let accounts = db::accounts(&connection).expect("accounts");
         assert_eq!(accounts[0].jurisdiction, "GB");
-        assert_eq!(db::schema_version(&connection).expect("schema version"), 6);
+        assert_eq!(
+            db::schema_version(&connection).expect("schema version"),
+            db::SCHEMA_VERSION
+        );
     }
 
     #[test]
@@ -756,6 +759,16 @@ mod tests {
             "stocks_and_shares_isa",
         )
         .expect("import");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT numerator || '/' || denominator FROM corporate_action_adjustments WHERE instrument_id='US00SPLIT001' AND source='broker_import'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("normalized imported split"),
+            "1/50"
+        );
         connection.execute(
             "INSERT INTO historical_prices (instrument_id, price_date, price_coefficient, price_scale, currency, source) VALUES ('US00SPLIT001', '2025-01-02', '2', 0, 'GBP', 'test')",
             [],

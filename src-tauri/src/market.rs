@@ -47,7 +47,7 @@ pub fn history_candidates(connection: &Connection) -> Result<Vec<HistoryCandidat
          WHERE i.symbol IS NOT NULL
            AND (
              NOT EXISTS (SELECT 1 FROM historical_prices hp WHERE hp.instrument_id=i.id AND date(hp.fetched_at)=date('now'))
-             OR (i.symbol IN ('PHE','PREM') AND EXISTS (
+             OR ((COALESCE(i.isin,'') LIKE 'GB%' OR i.id LIKE 'GB%') AND EXISTS (
                SELECT 1 FROM historical_prices hp WHERE hp.instrument_id=i.id AND hp.currency<>'GBP'
              ))
            )
@@ -58,7 +58,7 @@ pub fn history_candidates(connection: &Connection) -> Result<Vec<HistoryCandidat
         let symbol: String = row.get(1)?;
         let isin: Option<String> = row.get(2)?;
         let yahoo_symbol = if isin.as_deref().is_some_and(|value| value.starts_with("GB"))
-            || matches!(symbol.as_str(), "PHE" | "PREM")
+            || instrument_id.starts_with("GB")
         {
             format!("{symbol}.L")
         } else {

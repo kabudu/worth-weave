@@ -476,3 +476,44 @@ footer { font-size:10px; }
 @keyframes worthweave-progress { 0% { transform:translateX(-110%); } 100% { transform:translateX(350%); } }
 @keyframes worthweave-bars { to { transform:scaleY(.55);opacity:.45; } }
 @media(prefers-reduced-motion:reduce){.portfolio-loading-ring,.portfolio-loading-progress span,.chart-loading-mark i{animation:none}.portfolio-loading-progress span{width:70%}}
+
+/* Application-wide finishing pass: shared rhythm, controls and interaction feedback. */
+.import-dialog,.settings-dialog,.market-dialog,.about-dialog { scrollbar-width:thin;scrollbar-color:rgba(37,91,70,.28) transparent; }
+.dialog-topline { position:sticky;z-index:80;top:0;align-items:center;padding:26px 30px 22px;background:rgba(247,248,243,.94);backdrop-filter:blur(14px); }
+.dialog-topline .section-kicker { margin-bottom:7px; }.dialog-topline h2 { line-height:1.08; }
+.dialog-privacy { position:sticky;z-index:70;bottom:0;background:rgba(247,248,243,.94);backdrop-filter:blur(12px); }
+.settings-dialog { width:min(820px,calc(100vw - 48px));border-radius:24px; }
+.settings-content,.ai-settings,.backup-settings { grid-template-columns:minmax(190px,.72fr) minmax(0,1.28fr);gap:42px;padding:30px 34px; }
+.settings-content h3,.ai-settings h3,.backup-settings h3 { margin:0 0 8px;font:600 17px "Manrope Variable";letter-spacing:-.35px;color:#17372d; }
+.settings-content>div>p,.ai-settings>div:first-child p,.backup-settings>div:first-child p { max-width:280px;font-size:12px;line-height:1.65; }
+.settings-dialog .currency-form { max-width:none; }
+.settings-dialog .currency-select-wrap { height:var(--form-control-height);grid-template-columns:58px minmax(0,1fr);border-color:var(--form-control-border);border-radius:var(--form-control-radius);box-shadow:none;transition:border-color .16s ease,box-shadow .16s ease; }
+.settings-dialog .currency-select-wrap:focus-within { border-color:var(--form-control-focus);box-shadow:0 0 0 3px rgba(77,158,118,.14); }
+.settings-dialog .currency-select-wrap>span { font-size:18px; }
+.settings-dialog .currency-select-wrap select,.onboarding-panel .currency-select-wrap select {
+  height:100%;appearance:none;border:0;padding:0 42px 0 14px;background-color:#fff;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m3 5 4 4 4-4' stroke='%23304c42' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;background-size:14px;
+}
+.settings-dialog .currency-submit { min-width:190px;height:48px;margin-top:18px;padding:0 18px; }
+.settings-dialog .currency-submit span { float:none;margin:0 0 0 24px; }
+.ai-settings .secondary-button { min-height:48px;margin-top:16px;padding:0 18px;border-radius:var(--form-control-radius); }
+.backup-settings input { font-size:14px; }
+.backup-settings .restore-confirm { min-height:34px;margin-top:14px;line-height:1.4; }
+.restore-toggle { width:44px;height:25px;padding:3px; }.restore-toggle>span { width:17px;height:17px; }.restore-confirm input:checked+.restore-toggle>span { transform:translateX(19px); }
+.backup-actions { display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:16px; }
+.backup-actions .secondary-button { min-width:0;min-height:48px;margin:0;padding:0 14px;border-radius:var(--form-control-radius);white-space:nowrap; }
+.backup-actions .secondary-button:first-child { grid-column:1/-1; }
+.primary-button:not(:disabled):hover { background:#0e4437;box-shadow:0 11px 30px rgba(18,79,63,.23); }
+.primary-button:disabled,.secondary-button:disabled,.file-drop:disabled { opacity:.5;filter:saturate(.7);cursor:not-allowed;box-shadow:none; }
+.market-provider button { min-height:48px;padding:0 16px;border-radius:var(--form-control-radius); }
+.market-columns form { padding:28px; }.market-columns form>p { min-height:62px; }
+.market-columns .secondary-button { width:100%;min-height:48px;margin:0 0 4px;padding:0 16px;border-radius:var(--form-control-radius); }
+.about-close { color:#d8e7e0;background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.18); }
+.about-close:hover { color:#fff;background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.28); }
+.about-done { min-height:48px;border-radius:var(--form-control-radius); }
+.report-table-wrap tbody tr { transition:background-color .14s ease; }.report-table-wrap tbody tr:hover { background:rgba(226,240,230,.42); }
+.metric-card,.journey-card,.allocation-grid>article,.income-grid article,.attribution-card,.reconciliation-card { transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease; }
+.metric-card:not(.featured):hover,.allocation-grid>article:hover,.income-grid article:hover { border-color:rgba(25,91,68,.16);box-shadow:0 12px 34px rgba(35,76,59,.065); }
+.sidebar nav button:focus-visible,.brand:focus-visible,.profile-button:focus-visible { outline-color:#8de2b4;outline-offset:1px; }
+@media(max-width:760px){.settings-content,.ai-settings,.backup-settings{grid-template-columns:1fr;gap:18px;padding:24px}.settings-content>div>p,.ai-settings>div:first-child p,.backup-settings>div:first-child p{max-width:none}.market-columns form>p{min-height:0}.backup-actions{grid-template-columns:1fr}.backup-actions .secondary-button:first-child{grid-column:auto}}

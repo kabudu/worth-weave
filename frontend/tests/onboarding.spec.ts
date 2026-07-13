@@ -101,12 +101,25 @@ test("completes accessible first-run onboarding", async ({ page }) => {
   expect(settingsOffset).toBeLessThanOrEqual(1);
   await expect(page.getByRole("switch", { name: /restoring replaces all current portfolio data/i })).not.toBeChecked();
   await expect(page.getByRole("button", { name: "Restore backup" })).toBeDisabled();
+  const settingsControls = await page.locator(".settings-dialog").evaluate((dialog) => ({
+    currencyHeight: dialog.querySelector<HTMLElement>(".currency-select-wrap")?.getBoundingClientRect().height ?? 0,
+    passwordHeight: dialog.querySelector<HTMLInputElement>(".backup-settings input[type=password]")?.getBoundingClientRect().height ?? 0,
+    actionHeights: Array.from(dialog.querySelectorAll<HTMLElement>(".backup-actions button")).map((button) => button.getBoundingClientRect().height),
+  }));
+  expect(settingsControls.currencyHeight).toBe(48);
+  expect(settingsControls.passwordHeight).toBe(48);
+  expect(new Set(settingsControls.actionHeights)).toEqual(new Set([48]));
+  if (process.env.CAPTURE_SCREENSHOTS) { await page.waitForTimeout(300); await page.screenshot({ path: "../.dev/screenshots/settings-dialog.png", fullPage: true }); }
   const settingsScan = await new AxeBuilder({ page }).analyze();
   expect(settingsScan.violations).toEqual([]);
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("button", { name: "Portfolio", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your investments" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "What changed your return" })).toBeVisible();
+  await page.getByRole("button", { name: "Update market data" }).click();
+  await expect(page.getByRole("heading", { name: /prices, exchange rates/i })).toBeVisible();
+  if (process.env.CAPTURE_SCREENSHOTS) { await page.waitForTimeout(300); await page.screenshot({ path: "../.dev/screenshots/market-dialog.png", fullPage: true }); }
+  await page.getByRole("button", { name: "Close market data" }).click();
   const portfolioScan = await new AxeBuilder({ page }).analyze();
   expect(portfolioScan.violations).toEqual([]);
   expect(browserErrors).toEqual([]);

@@ -1,10 +1,68 @@
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use crate::error::{Result, WorthweaveError};
 use crate::models::{AiRecommendation, PortfolioExplanation};
 use futures_util::StreamExt;
+
+static MANAGED_RUNTIME: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+
+fn managed_runtime() -> &'static Mutex<Option<Child>> {
+    MANAGED_RUNTIME.get_or_init(|| Mutex::new(None))
+}
+
+fn track_runtime(mut process: Child) -> Result<()> {
+    let mut managed = managed_runtime()
+        .lock()
+        .map_err(|_| WorthweaveError::StateUnavailable)?;
+    if let Some(existing) = managed.as_mut()
+        && existing.try_wait()?.is_none()
+    {
+        let _ = process.kill();
+        let _ = process.wait();
+        return Ok(());
+    }
+    *managed = Some(process);
+    Ok(())
+}
+
+fn managed_runtime_exit_status() -> Result<Option<std::process::ExitStatus>> {
+    let mut managed = managed_runtime()
+        .lock()
+        .map_err(|_| WorthweaveError::StateUnavailable)?;
+    let Some(process) = managed.as_mut() else {
+        return Err(WorthweaveError::LocalAi(
+            "local runtime startup was cancelled".into(),
+        ));
+    };
+    let status = process.try_wait()?;
+    if status.is_some() {
+        managed.take();
+    }
+    Ok(status)
+}
+
+pub fn stop_managed_runtime() {
+    let Ok(mut managed) = managed_runtime().lock() else {
+        return;
+    };
+    if let Some(mut process) = managed.take() {
+        if process.try_wait().ok().flatten().is_none() {
+            let _ = process.kill();
+        }
+        let _ = process.wait();
+    }
+}
+
+pub struct RuntimeGuard;
+
+impl Drop for RuntimeGuard {
+    fn drop(&mut self) {
+        stop_managed_runtime();
+    }
+}
 
 fn memory_gib() -> u64 {
     Command::new("/usr/sbin/sysctl")
@@ -193,21 +251,13 @@ fn start_runtime(runtime: &str, model: &str) -> Result<Child> {
         ));
     }
     let mut command = if runtime == "rapid-mlx" {
-        let uv = command_path("uv").ok_or_else(|| {
+        let executable = command_path("rapid-mlx").ok_or_else(|| {
             WorthweaveError::LocalAi(
-                "uv could not be found. Set up private AI again in Settings.".into(),
+                "Rapid-MLX could not be found. Set up private AI again in Settings.".into(),
             )
         })?;
-        let mut command = Command::new(uv);
-        command.args([
-            "tool",
-            "run",
-            "--from",
-            "rapid-mlx==0.10.7",
-            "rapid-mlx",
-            "serve",
-            model,
-        ]);
+        let mut command = Command::new(executable);
+        command.args(["serve", model]);
         command
     } else if runtime == "ollama" {
         let ollama = command_path("ollama").ok_or_else(|| {
@@ -250,7 +300,8 @@ async fn ensure_runtime(runtime: &str, model: &str, base: &reqwest::Url) -> Resu
     {
         return Ok(());
     }
-    let mut process = start_runtime(runtime, model)?;
+    let process = start_runtime(runtime, model)?;
+    track_runtime(process)?;
     let startup_timeout = if runtime == "rapid-mlx" {
         Duration::from_secs(180)
     } else {
@@ -267,14 +318,13 @@ async fn ensure_runtime(runtime: &str, model: &str, base: &reqwest::Url) -> Resu
         {
             return Ok(());
         }
-        if let Some(status) = process.try_wait().map_err(|error| {
-            WorthweaveError::LocalAi(format!("could not monitor local runtime: {error}"))
-        })? {
+        if let Some(status) = managed_runtime_exit_status()? {
             return Err(WorthweaveError::LocalAi(format!(
                 "the local runtime stopped before the model was ready ({status}). Set up private AI again in Settings."
             )));
         }
     }
+    stop_managed_runtime();
     Err(WorthweaveError::LocalAi(
         "the local model is taking longer than expected to start. Wait a moment, then try your question again.".into(),
     ))

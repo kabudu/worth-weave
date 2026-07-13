@@ -376,6 +376,7 @@ pub fn run() {
             app.manage(AppState {
                 connection: std::sync::Mutex::new(connection),
             });
+            app.manage(ai::RuntimeGuard);
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -418,8 +419,13 @@ pub fn run() {
             export_portfolio_json,
             import_broker_file
         ])
-        .run(tauri::generate_context!())
-        .expect("Worthweave failed to start");
+        .build(tauri::generate_context!())
+        .expect("Worthweave failed to start")
+        .run(|_, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                ai::stop_managed_runtime();
+            }
+        });
 }
 
 #[cfg(test)]

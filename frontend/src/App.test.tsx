@@ -116,6 +116,34 @@ test("shows branded progress while core portfolio data is still loading", async 
   expect(await screen.findByRole("heading", { name: /your investments/i })).toBeInTheDocument();
 });
 
+test("presents private AI markdown as a structured results dialog", async () => {
+  mockNativeCommands(true);
+  const nativeImplementation = vi.mocked(invoke).getMockImplementation();
+  vi.mocked(invoke).mockImplementation((command, args) => {
+    if (command === "get_settings") return Promise.resolve({
+      reporting_currency: "GBP", onboarding_complete: true, ai_onboarding_complete: true,
+      ai_runtime: "rapid-mlx", ai_model: "qwen3.5-4b-4bit", ai_endpoint: "http://127.0.0.1:8000/v1",
+    });
+    if (command === "explain_portfolio") return Promise.resolve({
+      answer: "## Portfolio balance\nYour holdings are spread across two accounts.\n\n### Largest positions\n- **Example plc (EXM):** £120.00\n- **Sample Inc (SMP):** £80.00",
+      model: "qwen3.5-4b-4bit", generated_at: new Date().toISOString(),
+    });
+    return nativeImplementation!(command, args);
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  expect(await screen.findByRole("heading", { name: /your wealth, in focus/i })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Insights" }));
+  fireEvent.click(await screen.findByRole("button", { name: /ask worthweave/i }));
+
+  expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Portfolio balance" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Largest positions" })).toBeInTheDocument();
+  expect(screen.getByText("Example plc (EXM):")).toBeInTheDocument();
+  expect(screen.queryByText(/\*\*/)).not.toBeInTheDocument();
+});
+
 test("requires a main currency during first-run onboarding", async () => {
   mockNativeCommands(false);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

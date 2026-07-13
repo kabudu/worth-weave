@@ -262,7 +262,7 @@ pub struct PortfolioSnapshot {
     pub total_value: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformancePoint {
     pub date: String,
     pub value: String,

@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use rusqlite::Connection;
+use chrono::Utc;
+use rusqlite::{Connection, OptionalExtension, params};
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 use crate::models::{
@@ -493,6 +495,35 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
     let reporting_currency = crate::db::settings(connection)?
         .reporting_currency
         .unwrap_or_else(|| "GBP".into());
+    let signature: String = connection.query_row(
+        "SELECT printf('history-v5|%s|%s|%s|%s|%s|%s|%s',
+           ?1,
+           (SELECT COUNT(*) || ':' || COALESCE(MAX(imported_at),'') FROM import_batches),
+           (SELECT COUNT(*) || ':' || COALESCE(MAX(fetched_at),'') FROM historical_prices),
+           (SELECT COUNT(*) || ':' || COALESCE(MAX(as_of),'') FROM market_prices),
+           (SELECT COUNT(*) || ':' || COALESCE(MAX(as_of),'') FROM fx_rates),
+           (SELECT COUNT(*) || ':' || COALESCE(MAX(report_date),'') FROM broker_position_snapshots),
+           date('now'))",
+        [reporting_currency.as_str()],
+        |row| row.get(0),
+    )?;
+    let cached_payload: Option<String> = connection
+        .query_row(
+            "SELECT payload FROM performance_history_cache WHERE scope=?1 AND signature=?2",
+            params![scope, signature],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(payload) = cached_payload
+        && let Ok(cached) = serde_json::from_str::<CachedPerformanceHistory>(&payload)
+    {
+        return Ok(PerformanceHistory {
+            reporting_currency: cached.reporting_currency,
+            scope: cached.scope,
+            coverage: coverage_label(&cached.coverage),
+            points: cached.points,
+        });
+    }
     let (filter, value) = if let Some(account_id) = scope.strip_prefix("account:") {
         (" AND p.account_id = ?1", Some(account_id))
     } else if let Some(broker) = scope.strip_prefix("broker:") {
@@ -535,10 +566,30 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
             consume(row)?;
         }
     }
+    let history_start: String = connection.query_row(
+        "SELECT COALESCE(MIN(substr(occurred_at,1,10)), date('now')) FROM events WHERE quantity_coefficient IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
     let mut reconstructed_statement = connection.prepare(
-        "WITH daily_coverage AS (
+        "WITH unit_cost_bounds AS (
+           SELECT instrument_id,
+             MAX(ABS(CAST(amount_coefficient AS REAL) * CAST('1e-' || amount_scale AS REAL)) /
+                 ABS(CAST(quantity_coefficient AS REAL) * CAST('1e-' || quantity_scale AS REAL))) AS max_unit_cost
+           FROM events
+           WHERE event_type IN ('buy','sell') AND amount_coefficient IS NOT NULL
+             AND quantity_coefficient IS NOT NULL AND CAST(quantity_coefficient AS REAL)<>0
+           GROUP BY instrument_id
+         ), candidate_dates AS (
+           SELECT DISTINCT price_date FROM historical_prices
+           WHERE price_date>=?1
+             AND (price_date>=date('now','-180 days') OR strftime('%w', price_date)='5'
+               OR price_date=(SELECT MIN(price_date) FROM historical_prices WHERE price_date>=?1))
+         ), daily_coverage AS (
            SELECT price_date, COUNT(DISTINCT instrument_id) AS priced
-           FROM historical_prices GROUP BY price_date
+           FROM historical_prices
+           WHERE price_date IN (SELECT price_date FROM candidate_dates)
+           GROUP BY price_date
          ), coverage_window AS (
            SELECT price_date, priced,
              MAX(priced) OVER (ORDER BY price_date ROWS BETWEEN 20 PRECEDING AND 20 FOLLOWING) AS nearby_max
@@ -548,7 +599,7 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
          )
          SELECT hp.price_date, hp.price_coefficient, hp.price_scale, hp.currency,
                 e.account_id, a.broker,
-                SUM(CASE
+                SUM((CASE
                   WHEN e.event_type='buy' THEN ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
                   WHEN e.event_type='sell' THEN -ABS(CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL))
                   WHEN e.event_type='transfer' THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
@@ -557,23 +608,47 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
                   WHEN e.event_type='corporate_action' THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
                   WHEN e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%')
                     THEN CAST(e.quantity_coefficient AS REAL) * CAST('1e-' || e.quantity_scale AS REAL)
-                  ELSE 0 END) AS quantity,
+                  ELSE 0 END) *
+                  CASE
+                    WHEN e.instrument_id='MHY1146L2082' THEN CASE WHEN substr(e.occurred_at,1,10)<'2021-05-28' AND hp.price_date>='2021-05-28' THEN 0.1 ELSE 1 END
+                    WHEN e.instrument_id='US2056504010' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-02-10' AND hp.price_date>='2023-02-10' THEN 0.01 ELSE 1 END
+                    WHEN e.instrument_id='US21078F1093' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-04-12' AND hp.price_date>='2023-04-12' THEN (1.0/30.0) ELSE 1 END
+                    WHEN e.instrument_id='US1724063086' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-06-09' AND hp.price_date>='2023-06-09' THEN 0.05 ELSE 1 END
+                    WHEN e.instrument_id='US4268974015' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-05-11' AND hp.price_date>='2023-05-11' THEN 0.05 ELSE 1 END
+                    WHEN e.instrument_id='US70387R5028' THEN CASE WHEN substr(e.occurred_at,1,10)<'2023-12-07' AND hp.price_date>='2023-12-07' THEN (1.0/15.0) ELSE 1 END
+                    WHEN e.instrument_id='US05552Q3011' THEN CASE WHEN substr(e.occurred_at,1,10)<'2022-12-12' AND hp.price_date>='2022-12-12' THEN 0.1 ELSE 1 END
+                    WHEN e.instrument_id='US62526P8775' THEN
+                      (CASE WHEN substr(e.occurred_at,1,10)<'2025-06-02' AND hp.price_date>='2025-06-02' THEN 0.01 ELSE 1 END) *
+                      (CASE WHEN substr(e.occurred_at,1,10)<'2025-08-04' AND hp.price_date>='2025-08-04' THEN 0.004 ELSE 1 END) *
+                      (CASE WHEN substr(e.occurred_at,1,10)<'2025-09-22' AND hp.price_date>='2025-09-22' THEN 0.004 ELSE 1 END)
+                    ELSE 1
+                  END) AS quantity,
                 (SELECT EXISTS(SELECT 1 FROM coverage_window WHERE priced * 5 < nearby_max * 4)) AS has_coverage_gaps
          FROM historical_prices hp
          JOIN eligible_dates eligible ON eligible.price_date=hp.price_date
          JOIN events e ON e.instrument_id=hp.instrument_id AND substr(e.occurred_at,1,10)<=hp.price_date
          JOIN accounts a ON a.id=e.account_id
+         LEFT JOIN instruments i ON i.id=e.instrument_id
+         LEFT JOIN unit_cost_bounds costs ON costs.instrument_id=e.instrument_id
          WHERE e.quantity_coefficient IS NOT NULL AND (
              e.event_type IN ('buy','sell','transfer','corporate_action')
              OR (e.event_type='other' AND (lower(e.description) LIKE '%split%' OR lower(e.description) LIKE '%cusip/isin change%'))
          )
+           AND NOT (i.symbol IN ('PHE','PREM') AND hp.currency<>'GBP')
+           AND (costs.max_unit_cost IS NULL OR
+             CAST(hp.price_coefficient AS REAL) * CAST('1e-' || hp.price_scale AS REAL) <= costs.max_unit_cost * 10
+             OR EXISTS (SELECT 1 FROM events action WHERE action.instrument_id=e.instrument_id AND action.event_type='corporate_action'))
+           AND e.instrument_id NOT IN (
+             'MHY1146L2082','US2056504010','US21078F1093','US1724063086',
+             'US4268974015','US70387R5028','US05552Q3011','US62526P8775'
+           )
            AND NOT EXISTS (SELECT 1 FROM broker_position_snapshots bp
              WHERE bp.account_id=e.account_id AND bp.report_date=hp.price_date
                AND bp.position_value_coefficient IS NOT NULL)
          GROUP BY hp.price_date, hp.instrument_id, e.account_id
          HAVING quantity > 0 ORDER BY hp.price_date",
     )?;
-    let mut rows = reconstructed_statement.query([])?;
+    let mut rows = reconstructed_statement.query([history_start])?;
     while let Some(row) = rows.next()? {
         let account_id: String = row.get(4)?;
         let broker: String = row.get(5)?;
@@ -620,6 +695,24 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
             }
         }
     }
+    let current_valuation = crate::market::valuation(connection)?;
+    let current_total = current_valuation
+        .holdings
+        .iter()
+        .filter(|holding| {
+            scope
+                .strip_prefix("account:")
+                .is_none_or(|wanted| holding.holding.account_id == wanted)
+                && scope
+                    .strip_prefix("broker:")
+                    .is_none_or(|wanted| holding.holding.broker == wanted)
+        })
+        .filter_map(|holding| holding.reporting_value.as_deref())
+        .filter_map(|value| value.parse::<Decimal>().ok())
+        .sum::<Decimal>();
+    if current_total > Decimal::ZERO {
+        totals.insert(Utc::now().format("%Y-%m-%d").to_string(), current_total);
+    }
     let points = totals
         .into_iter()
         .map(|(date, value)| PerformancePoint {
@@ -627,7 +720,7 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
             value: value.normalize().to_string(),
         })
         .collect();
-    Ok(PerformanceHistory {
+    let result = PerformanceHistory {
         reporting_currency,
         scope: scope.into(),
         coverage: if missing_conversion {
@@ -638,7 +731,38 @@ pub fn performance_history(connection: &Connection, scope: &str) -> Result<Perfo
             "broker_imports"
         },
         points,
+    };
+    let payload = serde_json::to_string(&CachedPerformanceHistory {
+        reporting_currency: result.reporting_currency.clone(),
+        scope: result.scope.clone(),
+        coverage: result.coverage.into(),
+        points: result.points.clone(),
     })
+    .map_err(|_| {
+        crate::error::WorthweaveError::InvalidMarketData("could not cache portfolio history".into())
+    })?;
+    connection.execute(
+        "INSERT INTO performance_history_cache (scope, signature, payload) VALUES (?1, ?2, ?3)
+         ON CONFLICT(scope) DO UPDATE SET signature=excluded.signature, payload=excluded.payload, updated_at=CURRENT_TIMESTAMP",
+        params![scope, signature, payload],
+    )?;
+    Ok(result)
+}
+
+#[derive(Serialize, Deserialize)]
+struct CachedPerformanceHistory {
+    reporting_currency: String,
+    scope: String,
+    coverage: String,
+    points: Vec<PerformancePoint>,
+}
+
+fn coverage_label(value: &str) -> &'static str {
+    match value {
+        "partial" => "partial",
+        "market_reconstructed" => "market_reconstructed",
+        _ => "broker_imports",
+    }
 }
 
 pub fn reconciliation(connection: &Connection) -> Result<Vec<ReconciliationItem>> {
@@ -722,8 +846,12 @@ mod tests {
                    quantity_coefficient TEXT, quantity_scale INTEGER, description TEXT,
                    occurred_at TEXT
                  );
-                 CREATE TABLE historical_prices (instrument_id TEXT, price_date TEXT, price_coefficient TEXT, price_scale INTEGER, currency TEXT);
-                 CREATE TABLE broker_position_snapshots (account_id TEXT, report_date TEXT, position_value_coefficient TEXT, position_value_scale INTEGER, position_value_currency TEXT);
+                 CREATE TABLE import_batches (imported_at TEXT);
+                 CREATE TABLE historical_prices (instrument_id TEXT, price_date TEXT, price_coefficient TEXT, price_scale INTEGER, currency TEXT, fetched_at TEXT DEFAULT CURRENT_TIMESTAMP);
+                 CREATE TABLE broker_position_snapshots (account_id TEXT, report_date TEXT, instrument_id TEXT, quantity_coefficient TEXT, quantity_scale INTEGER, cost_basis_coefficient TEXT, cost_basis_scale INTEGER, cost_basis_currency TEXT, position_value_coefficient TEXT, position_value_scale INTEGER, position_value_currency TEXT);
+                 CREATE TABLE market_prices (instrument_id TEXT, price_coefficient TEXT, price_scale INTEGER, currency TEXT, as_of TEXT, source TEXT);
+                 CREATE TABLE fx_rates (base_currency TEXT, quote_currency TEXT, rate_coefficient TEXT, rate_scale INTEGER, as_of TEXT, source TEXT);
+                 CREATE TABLE performance_history_cache (scope TEXT PRIMARY KEY, signature TEXT, payload TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
                  INSERT INTO app_settings VALUES (1, 'USD', 1, 0, NULL, NULL, NULL);
                  INSERT INTO accounts VALUES ('account', 'IBKR ISA', 'ibkr');",
             )
@@ -885,15 +1013,27 @@ mod tests {
             "2026-01-01",
         );
         connection.execute_batch(
-            "INSERT INTO historical_prices VALUES ('US0000000001', '2026-01-02', '1000', 2, 'USD');
-             INSERT INTO historical_prices VALUES ('US0000000002', '2026-01-02', '2000', 2, 'USD');
-             INSERT INTO historical_prices VALUES ('US0000000001', '2026-01-03', '1100', 2, 'USD');"
+            "INSERT INTO historical_prices (instrument_id, price_date, price_coefficient, price_scale, currency) VALUES ('US0000000001', '2026-07-09', '1000', 2, 'USD');
+             INSERT INTO historical_prices (instrument_id, price_date, price_coefficient, price_scale, currency) VALUES ('US0000000002', '2026-07-09', '2000', 2, 'USD');
+             INSERT INTO historical_prices (instrument_id, price_date, price_coefficient, price_scale, currency) VALUES ('US0000000001', '2026-07-10', '1100', 2, 'USD');"
         ).expect("historical prices");
 
         let history = performance_history(&connection, "account:account").expect("history");
         assert_eq!(history.points.len(), 1);
-        assert_eq!(history.points[0].date, "2026-01-02");
+        assert_eq!(history.points[0].date, "2026-07-09");
         assert_eq!(history.points[0].value, "30");
         assert_eq!(history.coverage, "partial");
+        let cached = performance_history(&connection, "account:account").expect("cached history");
+        assert_eq!(cached.points.len(), history.points.len());
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM performance_history_cache WHERE scope='account:account'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .expect("cache row"),
+            1
+        );
     }
 }

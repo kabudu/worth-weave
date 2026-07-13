@@ -205,6 +205,13 @@ pub fn open(path: &Path) -> Result<Connection> {
            PRIMARY KEY (instrument_id, price_date)
          );
          CREATE INDEX IF NOT EXISTS idx_historical_prices_date ON historical_prices(price_date);
+         CREATE INDEX IF NOT EXISTS idx_historical_prices_fetched ON historical_prices(fetched_at DESC);
+         CREATE TABLE IF NOT EXISTS performance_history_cache (
+           scope TEXT PRIMARY KEY NOT NULL,
+           signature TEXT NOT NULL,
+           payload TEXT NOT NULL,
+           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
          CREATE TABLE IF NOT EXISTS broker_position_snapshots (
            id TEXT PRIMARY KEY NOT NULL,
            account_id TEXT NOT NULL REFERENCES accounts(id),
@@ -218,6 +225,8 @@ pub fn open(path: &Path) -> Result<Connection> {
          CREATE INDEX IF NOT EXISTS idx_events_projection
            ON events (account_id, instrument_id, event_type, occurred_at, id);
          CREATE INDEX IF NOT EXISTS idx_events_activity ON events (occurred_at DESC, id DESC);
+         CREATE INDEX IF NOT EXISTS idx_events_history
+           ON events (instrument_id, occurred_at, account_id, event_type);
          CREATE INDEX IF NOT EXISTS idx_import_batches_account ON import_batches (account_id, imported_at);
          CREATE INDEX IF NOT EXISTS idx_broker_positions_latest ON broker_position_snapshots (account_id, report_date DESC);",
     )?;

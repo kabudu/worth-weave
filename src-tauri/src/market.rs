@@ -43,14 +43,21 @@ pub fn history_candidates(connection: &Connection) -> Result<Vec<HistoryCandidat
         "SELECT DISTINCT i.id, i.symbol, i.isin
          FROM instruments i JOIN events e ON e.instrument_id=i.id
          WHERE i.symbol IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM historical_prices hp WHERE hp.instrument_id=i.id AND date(hp.fetched_at)=date('now'))
+           AND (
+             NOT EXISTS (SELECT 1 FROM historical_prices hp WHERE hp.instrument_id=i.id AND date(hp.fetched_at)=date('now'))
+             OR (i.symbol IN ('PHE','PREM') AND EXISTS (
+               SELECT 1 FROM historical_prices hp WHERE hp.instrument_id=i.id AND hp.currency<>'GBP'
+             ))
+           )
          ORDER BY i.symbol LIMIT 300",
     )?;
     let rows = statement.query_map([], |row| {
         let instrument_id: String = row.get(0)?;
         let symbol: String = row.get(1)?;
         let isin: Option<String> = row.get(2)?;
-        let yahoo_symbol = if isin.as_deref().is_some_and(|value| value.starts_with("GB")) {
+        let yahoo_symbol = if isin.as_deref().is_some_and(|value| value.starts_with("GB"))
+            || matches!(symbol.as_str(), "PHE" | "PREM")
+        {
             format!("{symbol}.L")
         } else {
             symbol

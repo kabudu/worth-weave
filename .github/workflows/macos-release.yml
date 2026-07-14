@@ -174,7 +174,7 @@ jobs:
           # Tauri notarizes and staples the application before packaging it in
           # the DMG. The disk image itself therefore has no stapled ticket.
           hdiutil verify "$dmg"
-          shasum -a 256 "$dmg" > "${dmg}.sha256"
+          (cd "$(dirname "$dmg")" && shasum -a 256 "$(basename "$dmg")") > "${dmg}.sha256"
 
       - name: Create updater manifest
         if: steps.release.outputs.tag != ''

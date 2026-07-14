@@ -1,4 +1,4 @@
-use chrono::{Months, Utc};
+use chrono::{Duration, Utc};
 use rusqlite::{Connection, params};
 use rust_decimal::Decimal;
 use std::str::FromStr;
@@ -216,7 +216,9 @@ pub fn seed(connection: &mut Connection) -> Result<()> {
     }
 
     let today = Utc::now().date_naive();
-    let history_start = today.checked_sub_months(Months::new(35)).unwrap_or(today);
+    let history_start = today
+        .checked_sub_signed(Duration::days(1_095))
+        .unwrap_or(today);
     let transaction = connection.transaction()?;
     transaction.execute(
         "UPDATE app_settings SET reporting_currency='GBP', onboarding_complete=1, ai_onboarding_complete=1 WHERE id=1",
@@ -292,13 +294,13 @@ pub fn seed(connection: &mut Connection) -> Result<()> {
         )?;
     }
 
-    for month in 0..36_u32 {
+    for day in 0..=1_095_i64 {
         let date = history_start
-            .checked_add_months(Months::new(month))
+            .checked_add_signed(Duration::days(day))
             .unwrap_or(today)
             .min(today);
-        let progress = Decimal::from(month) / Decimal::from(35);
-        let wave = Decimal::from(i64::from((month % 7) as i32 - 3)) / Decimal::from(250);
+        let progress = Decimal::from(day) / Decimal::from(1_095);
+        let wave = Decimal::from((day % 31) - 15) / Decimal::from(2_500);
         let factor = Decimal::new(72, 2) + progress * Decimal::new(28, 2) + wave;
         for holding in &HOLDINGS {
             let quantity = decimal(holding.quantity);
@@ -318,7 +320,7 @@ pub fn seed(connection: &mut Connection) -> Result<()> {
                   position_value_scale, position_value_currency)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
-                    format!("snapshot-{month}-{}", holding.instrument),
+                    format!("snapshot-{day}-{}", holding.instrument),
                     holding.account,
                     format!("aaaaaaaa-aaaa-4aaa-8aaa-{account_index:012}"),
                     date.to_string(),

@@ -152,3 +152,5 @@ Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) be
 ## License
 
 Worthweave is licensed under the [Apache License 2.0](LICENSE). It is permissive and includes an explicit patent grant from contributors. See the license for its preservation, attribution, and change-notice requirements.
+
+Worthweave bundles Inter and Manrope under the SIL Open Font License 1.1. Their copyright notices and license terms are included in [Third-party notices](src-tauri/resources/THIRD_PARTY_NOTICES.md) and in every packaged application bundle.

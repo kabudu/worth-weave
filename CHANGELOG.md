@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-14
+
 ### Added
 
 - Local-first macOS portfolio application built with Tauri, Rust, React, and TypeScript.
@@ -33,4 +35,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/commits/master
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kabudu/worth-weave/releases/tag/v0.1.0

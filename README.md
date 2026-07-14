@@ -24,6 +24,18 @@ Planned reporting and analysis features are documented in the [product roadmap](
 
 Financial results come from deterministic Rust code using exact decimal representations. The optional local AI can explain those verified results, but it cannot create transactions, change the ledger, or substitute speculation for missing data.
 
+## Preview
+
+The screenshots below use Worthweave's isolated showcase profile and entirely fictional portfolio data.
+
+### Overview
+
+![Worthweave overview showing a consolidated fictional portfolio](docs/screenshots/worthweave-overview.png)
+
+### Portfolio
+
+![Worthweave portfolio showing fictional holdings, performance history, and return attribution](docs/screenshots/worthweave-portfolio.png)
+
 ## Highlights
 
 - A consolidated view across Trading 212, Interactive Brokers, and Robinhood accounts.

@@ -216,6 +216,7 @@ jobs:
           crate_name="$(jq -r '.packages[0].name' <<<"$metadata")"
           crate_version="$(jq -r '.packages[0].version' <<<"$metadata")"
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --user-agent "worthweave-release-workflow/${GITHUB_RUN_ID}" \
             "https://crates.io/api/v1/crates/${crate_name}/${crate_version}")"
           case "$status" in
             200)

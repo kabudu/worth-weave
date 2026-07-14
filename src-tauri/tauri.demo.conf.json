@@ -1,0 +1,21 @@
+{
+  "productName": "Worthweave Demo",
+  "identifier": "app.worthweave.portfolio.demo",
+  "app": {
+    "windows": [
+      {
+        "title": "Worthweave Demo",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 960,
+        "minHeight": 760,
+        "maximized": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["app"]
+  }
+}

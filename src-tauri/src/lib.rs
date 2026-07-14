@@ -1,6 +1,7 @@
 mod ai;
 mod backup;
 mod db;
+mod demo;
 mod error;
 mod imports;
 mod market;
@@ -488,7 +489,10 @@ pub fn run() {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o700))?;
             }
-            let connection = db::open(&data_dir.join("worthweave.db"))?;
+            let mut connection = db::open(&data_dir.join("worthweave.db"))?;
+            if app.config().identifier.ends_with(".demo") {
+                demo::seed(&mut connection)?;
+            }
             app.manage(AppState {
                 connection: std::sync::Mutex::new(connection),
             });
@@ -570,6 +574,23 @@ mod tests {
                     .as_str()
                     .is_some_and(|text| text.contains("exceeds 50"))))
         );
+    }
+
+    #[test]
+    fn demo_profile_seeds_complete_fictional_data_without_touching_other_databases() {
+        let directory = tempdir().expect("temp directory");
+        let mut connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        demo::seed(&mut connection).expect("seed demo");
+        demo::seed(&mut connection).expect("seed demo is idempotent");
+
+        assert_eq!(db::accounts(&connection).expect("accounts").len(), 3);
+        let valuation = market::valuation(&connection).expect("valuation");
+        assert!(valuation.valuation_complete);
+        assert_eq!(valuation.holdings.len(), 12);
+        assert_eq!(valuation.missing_price_count, 0);
+        assert!(valuation.total_value.is_some());
+        let history = projections::performance_history(&connection, "all").expect("history");
+        assert!(history.points.len() >= 30);
     }
 
     #[test]

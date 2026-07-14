@@ -171,7 +171,8 @@ jobs:
           grep -F "flags=0x10000(runtime)" <<<"$codesign_details"
           spctl --assess --type execute --verbose=2 "$app"
           xcrun stapler validate "$app"
-          xcrun stapler validate "$dmg"
+          # Tauri notarizes and staples the application before packaging it in
+          # the DMG. The disk image itself therefore has no stapled ticket.
           hdiutil verify "$dmg"
           shasum -a 256 "$dmg" > "${dmg}.sha256"
 

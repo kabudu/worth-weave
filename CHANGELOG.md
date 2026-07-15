@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-15
+
+### Fixed
+
+- Include the project README in the crates.io package so the crate page displays its documentation.
+- Restore production dependency auditing after npm retired the legacy audit API used by pnpm 10.
+
+### Changed
+
+- Upgrade the pinned package manager to pnpm 11.13.0, which uses npm's supported bulk-advisory API.
+
 ## [0.1.0] - 2026-07-14
 
 ### Added
@@ -35,5 +46,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/kabudu/worth-weave/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kabudu/worth-weave/releases/tag/v0.1.0

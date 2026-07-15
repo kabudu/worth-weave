@@ -1,6 +1,6 @@
 [package]
 name = "worthweave"
-version = "0.1.0"
+version = "0.1.1"
 description = "Private local-first investment portfolio"
 authors = ["Worthweave contributors"]
 edition = "2024"
@@ -8,6 +8,7 @@ rust-version = "1.97"
 license = "Apache-2.0"
 repository = "https://github.com/kabudu/worth-weave"
 homepage = "https://github.com/kabudu/worth-weave"
+readme = "../README.md"
 
 [lib]
 name = "worthweave_lib"

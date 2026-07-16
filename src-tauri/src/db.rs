@@ -380,8 +380,19 @@ pub fn open(path: &Path) -> Result<Connection> {
            (4, 'instrument_classification'),
            (5, 'reporting_indexes'),
            (6, 'region_aware_broker_accounts'),
-           (7, 'generic_corporate_action_metadata');
-         PRAGMA user_version = 7;",
+           (7, 'generic_corporate_action_metadata'),
+           (8, 'broker_api_connections');
+         CREATE TABLE IF NOT EXISTS broker_connections (
+           account_id TEXT PRIMARY KEY NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+           provider TEXT NOT NULL,
+           environment TEXT NOT NULL CHECK (environment IN ('live', 'demo')),
+           external_account_id TEXT,
+           pending_report_id TEXT,
+           last_success_at TEXT,
+           last_error TEXT,
+           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         PRAGMA user_version = 8;",
     )?;
     let bundled: Vec<BundledCorporateAction> =
         serde_json::from_str(include_str!("../resources/corporate-actions.json"))
@@ -403,7 +414,7 @@ pub fn open(path: &Path) -> Result<Connection> {
     Ok(connection)
 }
 
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 #[cfg(test)]
 pub fn schema_version(connection: &Connection) -> Result<i64> {

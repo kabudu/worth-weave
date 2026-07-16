@@ -1,5 +1,6 @@
 mod ai;
 mod backup;
+mod brokers;
 mod db;
 mod demo;
 mod error;
@@ -15,6 +16,7 @@ use db::AppState;
 use error::{Result, WorthweaveError};
 use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
+    BrokerAccountInput, BrokerConnectionStatus, BrokerSyncResult, ConnectTrading212Input,
     CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, FxRefreshResult, Holding,
     ImportResult, IncomeSummary, MassiveProviderStatus, MassiveRefreshResult, PortfolioExplanation,
     PortfolioSnapshot, PortfolioSummary, PriceQuote, ReconciliationItem, SaveAiSettingsInput,
@@ -438,6 +440,69 @@ fn import_broker_file(
     })
 }
 
+#[tauri::command]
+fn broker_connection_statuses(state: State<'_, AppState>) -> Result<Vec<BrokerConnectionStatus>> {
+    with_connection(&state, |connection| brokers::statuses(connection))
+}
+
+#[tauri::command]
+async fn connect_trading212(
+    input: ConnectTrading212Input,
+    app: AppHandle,
+) -> Result<BrokerConnectionStatus> {
+    {
+        let state = app.state::<AppState>();
+        with_connection(&state, |connection| {
+            brokers::validate_account(connection, &input.account_id)
+        })?;
+    }
+    let summary = brokers::verify_connection(&input).await?;
+    with_connection_blocking(app, move |connection| {
+        brokers::save_connection(connection, &input, summary)
+    })
+    .await
+}
+
+#[tauri::command]
+fn disconnect_broker(input: BrokerAccountInput, state: State<'_, AppState>) -> Result<()> {
+    with_connection(&state, |connection| {
+        brokers::disconnect(connection, &input.account_id)
+    })
+}
+
+#[tauri::command]
+async fn sync_broker(input: BrokerAccountInput, app: AppHandle) -> Result<BrokerSyncResult> {
+    let plan = {
+        let state = app.state::<AppState>();
+        with_connection(&state, |connection| {
+            brokers::prepare_sync(connection, &input.account_id)
+        })?
+    };
+    let fetched = match brokers::fetch_sync(&plan).await {
+        Ok(fetched) => fetched,
+        Err(error) => {
+            let message = error.to_string();
+            let state = app.state::<AppState>();
+            let _ = with_connection(&state, |connection| {
+                brokers::record_error(connection, &input.account_id, &message)
+            });
+            return Err(error);
+        }
+    };
+    let save_app = app.clone();
+    let result = with_connection_blocking(app, move |connection| {
+        brokers::save_sync(connection, plan, fetched)
+    })
+    .await;
+    if let Err(error) = &result {
+        let state = save_app.state::<AppState>();
+        let _ = with_connection(&state, |connection| {
+            brokers::record_error(connection, &input.account_id, &error.to_string())
+        });
+    }
+    result
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -537,7 +602,11 @@ pub fn run() {
             create_encrypted_backup,
             restore_encrypted_backup,
             export_portfolio_json,
-            import_broker_file
+            import_broker_file,
+            broker_connection_statuses,
+            connect_trading212,
+            disconnect_broker,
+            sync_broker
         ])
         .build(tauri::generate_context!())
         .expect("Worthweave failed to start")

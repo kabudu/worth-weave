@@ -18,7 +18,7 @@ const currencies = [
 
 function mockNativeCommands(onboardingComplete: boolean, aiOnboardingComplete = true) {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
-    if (["list_accounts", "list_holdings", "list_activity", "income_summary", "list_portfolio_snapshots", "portfolio_reconciliation"].includes(command)) return [];
+    if (["list_accounts", "list_holdings", "list_activity", "income_summary", "list_portfolio_snapshots", "portfolio_reconciliation", "broker_connection_statuses"].includes(command)) return [];
     if (command === "list_currencies") return currencies;
     if (command === "create_account") {
       const input = (args as { input: { broker: string; jurisdiction: "GB" | "US"; account_type: string; display_name: string } }).input;
@@ -114,6 +114,26 @@ test("shows branded progress while core portfolio data is still loading", async 
     notes: ["Import your account history to calculate your investment return."],
   });
   expect(await screen.findByRole("heading", { name: /your investments/i })).toBeInTheDocument();
+});
+
+test("offers a read-only Trading 212 connection per local account", async () => {
+  mockNativeCommands(true);
+  const nativeImplementation = vi.mocked(invoke).getMockImplementation();
+  const accountId = crypto.randomUUID();
+  vi.mocked(invoke).mockImplementation((command, args) => {
+    if (command === "list_accounts") return Promise.resolve([{ id: accountId, broker: "trading_212", jurisdiction: "GB", account_type: "stocks_and_shares_isa", display_name: "Trading 212 ISA", base_currency: "GBP" }]);
+    if (command === "broker_connection_statuses") return Promise.resolve([{ account_id: accountId, configured: false, environment: "live", external_account_id: null, last_success_at: null, last_error: null, sync_state: "disconnected" }]);
+    return nativeImplementation!(command, args);
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  expect(await screen.findByRole("heading", { name: /your wealth, in focus/i })).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole("button", { name: /settings/i })[0]!);
+  expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+  expect(screen.getAllByText("Trading 212 ISA").length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", { name: /connect read-only/i })).toBeEnabled();
+  expect(screen.getByText(/never receives trading permission/i)).toBeInTheDocument();
 });
 
 test("presents private AI markdown as a structured results dialog", async () => {

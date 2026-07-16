@@ -1,9 +1,9 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 
-import { completeInitialSetup, createEncryptedBackup, exportPortfolioJson, restoreEncryptedBackup, updateSettings, type CurrencyOption, type InitialAccount } from "./api";
+import { completeInitialSetup, connectTrading212, createEncryptedBackup, disconnectBroker, exportPortfolioJson, getBrokerConnectionStatuses, restoreEncryptedBackup, syncBroker, updateSettings, type Account, type CurrencyOption, type InitialAccount } from "./api";
 import { AiSettingsPanel } from "./AiSetup";
 
 type CurrencyFormProps = {
@@ -115,6 +115,7 @@ export function Onboarding({ currencies }: { currencies: CurrencyOption[] }) {
 }
 
 type SettingsDialogProps = {
+  accounts: Account[];
   currencies: CurrencyOption[];
   currentCurrency: string;
   open: boolean;
@@ -123,7 +124,7 @@ type SettingsDialogProps = {
   aiModel?: string | null;
 };
 
-export function SettingsDialog({ currencies, currentCurrency, open, onClose, aiRuntime = null, aiModel = null }: SettingsDialogProps) {
+export function SettingsDialog({ accounts, currencies, currentCurrency, open, onClose, aiRuntime = null, aiModel = null }: SettingsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -142,10 +143,62 @@ export function SettingsDialog({ currencies, currentCurrency, open, onClose, aiR
         <div><h3>Main currency</h3><p>Choose the currency used for overall totals. Your imported amounts will not be changed.</p></div>
         <CurrencyForm currencies={currencies} initialCurrency={currentCurrency} onSaved={onClose} submitLabel="Save changes" />
       </section>
+      {open && <BrokerConnectionsPanel accounts={accounts} />}
       {open && <AiSettingsPanel runtime={aiRuntime} model={aiModel} />}
       <BackupPanel />
     </dialog>
   );
+}
+
+function BrokerConnectionsPanel({ accounts }: { accounts: Account[] }) {
+  const queryClient = useQueryClient();
+  const trading212 = accounts.filter((account) => account.broker === "trading_212");
+  const statuses = useQuery({ queryKey: ["broker-connections"], queryFn: getBrokerConnectionStatuses });
+  const [credentials, setCredentials] = useState<Record<string, { key: string; secret: string; environment: "live" | "demo" }>>({});
+  const [message, setMessage] = useState<Record<string, string>>({});
+  const refreshPortfolio = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["broker-connections"] }),
+      queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] }),
+      queryClient.invalidateQueries({ queryKey: ["holdings"] }),
+      queryClient.invalidateQueries({ queryKey: ["activity"] }),
+      queryClient.invalidateQueries({ queryKey: ["valuation"] }),
+      queryClient.invalidateQueries({ queryKey: ["allocation"] }),
+      queryClient.invalidateQueries({ queryKey: ["total-return"] }),
+      queryClient.invalidateQueries({ queryKey: ["reconciliation"] }),
+    ]);
+  };
+  const connect = useMutation({
+    mutationFn: ({ accountId, values }: { accountId: string; values: { key: string; secret: string; environment: "live" | "demo" } }) => connectTrading212({ account_id: accountId, api_key: values.key, api_secret: values.secret, environment: values.environment }),
+    onSuccess: async (status) => {
+      setCredentials((current) => ({ ...current, [status.account_id]: { key: "", secret: "", environment: status.environment } }));
+      setMessage((current) => ({ ...current, [status.account_id]: "Connected securely. Your credentials are stored in macOS Keychain." }));
+      await refreshPortfolio();
+    },
+  });
+  const sync = useMutation({
+    mutationFn: syncBroker,
+    onSuccess: async (result) => {
+      setMessage((current) => ({ ...current, [result.account_id]: result.message }));
+      await refreshPortfolio();
+    },
+  });
+  const disconnect = useMutation({ mutationFn: disconnectBroker, onSuccess: refreshPortfolio });
+  if (trading212.length === 0) return <section className="broker-settings"><div><h3>Broker connections</h3><p>Add a Trading 212 account before connecting its API.</p></div><p className="broker-empty">CSV imports remain available from the Import data button.</p></section>;
+  return <section className="broker-settings"><div><h3>Broker connections</h3><p>Synchronise Trading 212 without downloading CSV files. Worthweave requests read-only account, portfolio and history access.</p></div><div className="broker-connection-list">
+    {trading212.map((account) => {
+      const status = statuses.data?.find((candidate) => candidate.account_id === account.id);
+      const values = credentials[account.id] ?? { key: "", secret: "", environment: "live" as const };
+      const busy = (connect.isPending && connect.variables?.accountId === account.id) || (sync.isPending && sync.variables === account.id) || (disconnect.isPending && disconnect.variables === account.id);
+      return <article className="broker-connection" key={account.id}><header><div><strong>{account.display_name}</strong><small>{account.account_type === "stocks_and_shares_isa" ? "Stocks and Shares ISA" : "Invest account"}</small></div><span className={`connection-state ${status?.sync_state ?? "disconnected"}`}>{status?.configured ? status.sync_state : "Not connected"}</span></header>
+        {status?.configured ? <div className="broker-connected"><p>{status.last_success_at ? `Last synced ${new Date(status.last_success_at).toLocaleString()}` : "Ready for the first sync"}{status.external_account_id ? ` · account ${status.external_account_id}` : ""}</p><div><button type="button" className="primary-button" disabled={busy} onClick={() => sync.mutate(account.id)}>{sync.isPending && sync.variables === account.id ? "Synchronising…" : status.sync_state === "preparing" ? "Check sync" : "Sync now"}</button><button type="button" className="secondary-button" disabled={busy} onClick={() => disconnect.mutate(account.id)}>Disconnect</button></div></div> : <form onSubmit={(event) => { event.preventDefault(); connect.mutate({ accountId: account.id, values }); }}><label>Environment<select value={values.environment} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, environment: event.target.value as "live" | "demo" } }))}><option value="live">Live account</option><option value="demo">Practice account</option></select></label><label>API key<input type="password" autoComplete="off" required maxLength={512} value={values.key} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, key: event.target.value } }))} /></label><label>API secret<input type="password" autoComplete="off" required maxLength={512} value={values.secret} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, secret: event.target.value } }))} /></label><button className="primary-button" disabled={busy}>Connect read-only</button></form>}
+        {message[account.id] && <small className="connection-message" role="status">{message[account.id]}</small>}
+        {status?.last_error && <small className="form-error" role="alert">{status.last_error}</small>}
+      </article>;
+    })}
+    {(statuses.isError || connect.isError || sync.isError || disconnect.isError) && <small className="form-error" role="alert">{String(statuses.error ?? connect.error ?? sync.error ?? disconnect.error)}</small>}
+    <p className="broker-fallback">CSV imports remain available for historical repairs and offline use. Worthweave never receives trading permission.</p>
+  </div></section>;
 }
 
 function BackupPanel() {

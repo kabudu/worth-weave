@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Read-only Trading 212 API connections for Invest and Stocks and Shares ISA accounts, with account-specific credentials protected by macOS Keychain.
+- Resilient daily broker synchronisation on launch, including official history exports, current position snapshots, idempotent imports, visible sync state, and CSV fallback.
+
 ## [0.1.1] - 2026-07-15
 
 ### Fixed

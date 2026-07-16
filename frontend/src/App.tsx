@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { CSSProperties } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { capturePortfolioSnapshot, getAccounts, getActivity, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution, refreshFxRates, refreshPortfolioHistory } from "./api";
+import { capturePortfolioSnapshot, getAccounts, getActivity, getBrokerConnectionStatuses, getCurrencies, getHoldings, getIncomeSummary, getPortfolioAllocation, getPortfolioReconciliation, getPortfolioSnapshots, getPortfolioSummary, getPortfolioValuation, getSettings, getTotalReturnAttribution, refreshFxRates, refreshPortfolioHistory, syncBroker } from "./api";
 import { Onboarding, SettingsDialog } from "./CurrencySetup";
 import { AiOnboarding } from "./AiSetup";
 import { ImportDialog } from "./ImportDialog";
@@ -86,6 +86,36 @@ export function App() {
   });
   const holdings = useQuery({ queryKey: ["holdings"], queryFn: ({ signal }) => getHoldings(signal), enabled: ready, staleTime: 5 * 60_000 });
   const accounts = useQuery({ queryKey: ["accounts"], queryFn: ({ signal }) => getAccounts(signal), enabled: ready, staleTime: 5 * 60_000 });
+  const brokerConnections = useQuery({ queryKey: ["broker-connections"], queryFn: getBrokerConnectionStatuses, enabled: ready, refetchInterval: (query) => query.state.data?.some((status) => status.sync_state === "preparing") ? 65_000 : false });
+  const brokerAttempts = useRef(new Map<string, number>());
+  const brokerSync = useMutation({ mutationFn: syncBroker, onSuccess: async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["broker-connections"] }),
+      queryClient.invalidateQueries({ queryKey: ["portfolio-summary"] }),
+      queryClient.invalidateQueries({ queryKey: ["holdings"] }),
+      queryClient.invalidateQueries({ queryKey: ["valuation"] }),
+      queryClient.invalidateQueries({ queryKey: ["allocation"] }),
+      queryClient.invalidateQueries({ queryKey: ["total-return"] }),
+      queryClient.invalidateQueries({ queryKey: ["reconciliation"] }),
+    ]);
+  } });
+  useEffect(() => {
+    if (!brokerConnections.data || brokerSync.isPending) return;
+    const now = Date.now();
+    const due = brokerConnections.data.find((status) => {
+      if (!status.configured) return false;
+      if (status.sync_state === "attention") return false;
+      const attempted = brokerAttempts.current.get(status.account_id) ?? 0;
+      if (now - attempted < 65_000) return false;
+      if (status.sync_state === "preparing") return true;
+      if (!status.last_success_at) return true;
+      return now - new Date(status.last_success_at).getTime() >= 24 * 60 * 60_000;
+    });
+    if (due) {
+      brokerAttempts.current.set(due.account_id, now);
+      brokerSync.mutate(due.account_id);
+    }
+  }, [brokerConnections.data, brokerSync]);
   const activity = useQuery({ queryKey: ["activity"], queryFn: ({ signal }) => getActivity(signal), enabled: ready && activeView === "Activity" });
   const income = useQuery({ queryKey: ["income"], queryFn: ({ signal }) => getIncomeSummary(signal), enabled: ready && activeView === "Income" });
   const valuation = useQuery({ queryKey: ["valuation"], queryFn: ({ signal }) => getPortfolioValuation(signal), enabled: ready && (activeView === "Overview" || activeView === "Portfolio") });
@@ -250,7 +280,7 @@ export function App() {
 
         <footer><span>Worthweave · Your data stays here</span><span>Figures calculated by Worthweave <i /> {settings.data.ai_runtime ? "Private AI ready" : "Private AI optional"}</span></footer>
         <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
-        <SettingsDialog currencies={currencies.data} currentCurrency={reportingCurrency} aiRuntime={settings.data.ai_runtime} aiModel={settings.data.ai_model} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <SettingsDialog accounts={accounts.data ?? []} currencies={currencies.data} currentCurrency={reportingCurrency} aiRuntime={settings.data.ai_runtime} aiModel={settings.data.ai_model} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
         <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
       </main>
     </div>

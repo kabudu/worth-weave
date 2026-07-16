@@ -26,6 +26,8 @@ pub enum WorthweaveError {
     InvalidSettings(String),
     #[error("invalid market data: {0}")]
     InvalidMarketData(String),
+    #[error("broker sync failed: {0}")]
+    BrokerSync(String),
     #[error("local AI request failed: {0}")]
     LocalAi(String),
     #[error("backup operation failed: {0}")]

@@ -32,6 +32,19 @@ export type Broker = Account["broker"];
 export type AccountType = Account["account_type"];
 export type ImportResult = z.infer<typeof importResultSchema>;
 
+const brokerConnectionStatusSchema = z.object({
+  account_id: z.string().uuid(), configured: z.boolean(), environment: z.enum(["live", "demo"]),
+  external_account_id: z.string().nullable(), last_success_at: z.string().nullable(),
+  last_error: z.string().nullable(), sync_state: z.enum(["disconnected", "ready", "preparing", "current", "attention"]),
+});
+const brokerSyncResultSchema = z.object({
+  account_id: z.string().uuid(), state: z.enum(["preparing", "complete"]),
+  events_added: z.number().int().nonnegative(), positions_updated: z.number().int().nonnegative(),
+  coverage_start: z.string().nullable(), coverage_end: z.string().nullable(), message: z.string(),
+});
+export type BrokerConnectionStatus = z.infer<typeof brokerConnectionStatusSchema>;
+export type BrokerSyncResult = z.infer<typeof brokerSyncResultSchema>;
+
 const appSettingsSchema = z.object({
   reporting_currency: z.string().regex(/^[A-Z]{3}$/).nullable(),
   onboarding_complete: z.boolean(),
@@ -320,4 +333,20 @@ export async function importBrokerFile(account: Account, filePath: string): Prom
     filePath,
     confirmedAccountType: account.account_type,
   }));
+}
+
+export async function getBrokerConnectionStatuses(): Promise<BrokerConnectionStatus[]> {
+  return z.array(brokerConnectionStatusSchema).parse(await invoke("broker_connection_statuses"));
+}
+
+export async function connectTrading212(input: { account_id: string; api_key: string; api_secret: string; environment: "live" | "demo" }): Promise<BrokerConnectionStatus> {
+  return brokerConnectionStatusSchema.parse(await invoke("connect_trading212", { input }));
+}
+
+export async function disconnectBroker(accountId: string): Promise<void> {
+  await invoke("disconnect_broker", { input: { account_id: accountId } });
+}
+
+export async function syncBroker(accountId: string): Promise<BrokerSyncResult> {
+  return brokerSyncResultSchema.parse(await invoke("sync_broker", { input: { account_id: accountId } }));
 }

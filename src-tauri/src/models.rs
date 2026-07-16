@@ -87,6 +87,41 @@ pub struct ImportResult {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ConnectTrading212Input {
+    pub account_id: String,
+    pub api_key: String,
+    pub api_secret: String,
+    pub environment: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BrokerAccountInput {
+    pub account_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BrokerConnectionStatus {
+    pub account_id: String,
+    pub configured: bool,
+    pub environment: String,
+    pub external_account_id: Option<String>,
+    pub last_success_at: Option<String>,
+    pub last_error: Option<String>,
+    pub sync_state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BrokerSyncResult {
+    pub account_id: String,
+    pub state: String,
+    pub events_added: usize,
+    pub positions_updated: usize,
+    pub coverage_start: Option<String>,
+    pub coverage_end: Option<String>,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ReconciliationItem {
     pub account_id: String,

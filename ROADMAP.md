@@ -4,6 +4,25 @@ This roadmap captures promising reporting and analysis features requested by use
 
 Worthweave's [v1 completion contract](docs/roadmap.md) tracks capabilities already delivered. True total-return attribution (F1) is complete and therefore is not repeated below.
 
+## Broker connectivity
+
+### B1. Trading 212 read-only synchronisation
+
+Status: implemented for Invest and Stocks and Shares ISA accounts.
+
+- Account-specific credentials stored in macOS Keychain.
+- Official history reports normalised through the existing immutable import pipeline.
+- Current position, cost-basis and price snapshots refreshed from the portfolio endpoint.
+- Once-daily launch catch-up, asynchronous report polling, rate-limit-aware retries and CSV fallback.
+
+### B2. Interactive Brokers Flex synchronisation
+
+Status: planned.
+
+- Retrieve the user's preconfigured Activity Flex Query through the Flex Web Service.
+- Reuse the existing multi-section IBKR parser and reconciliation model.
+- Keep Client Portal Web API positions as a later optional intraday enhancement.
+
 ## Product principles
 
 - Financial calculations belong in deterministic Rust code. The local LLM may explain verified results but must not invent figures.
@@ -467,4 +486,3 @@ A roadmap feature is done only when:
 4. Keyboard, screen-reader, contrast, and responsive checks pass.
 5. Security, privacy, performance, dependency, and packaged-app checks pass.
 6. Architecture, user documentation, and this roadmap are updated.
-

@@ -9,6 +9,15 @@ Robinhood is supported in the account model with region-specific legal wrappers:
 
 ## Current positions and repair imports
 
+### Trading 212 API synchronisation
+
+- Invest and Stocks and Shares ISA accounts may be connected independently through Trading 212's official Public API. Each account requires its own read-only API key pair.
+- Worthweave requests an official Trading 212 history report containing orders, dividends, interest and cash transactions. The downloaded CSV is passed through the same bounded parser, immutable event store and duplicate checks as a manually selected export.
+- The current positions endpoint supplies an authoritative daily position snapshot, cost basis, account-currency value and broker price. It does not replace imported transaction history for realised-return calculations.
+- Synchronisation runs on launch when the last successful sync is at least 24 hours old. Report generation is asynchronous; Worthweave records the report identifier locally and checks it again after the provider's rate-limit interval.
+- Network, authentication and rate-limit failures leave the last successful local dataset unchanged. CSV remains available for offline use, historical repair and schema troubleshooting.
+- Disconnecting deletes the credentials from macOS Keychain and local connection metadata. It does not delete previously imported portfolio records.
+
 - When an IBKR export contains an open-positions section, its latest dated position snapshot is authoritative for current quantities. Transactions remain the source for cost basis and return attribution only when the imported history fully explains that quantity.
 - IBKR instrument matching prefers ISIN, then contract ID, then a normalized symbol. Symbol-only trades are linked to the stronger identity from a position row in the same export when available.
 - IBKR mark prices and their currencies are imported from the latest position rows as broker-provided market data. They are never treated as live quotes.

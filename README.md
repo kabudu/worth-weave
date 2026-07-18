@@ -40,7 +40,7 @@ The screenshots below use Worthweave's isolated showcase profile and entirely fi
 
 - A consolidated view across Trading 212, Interactive Brokers, and Robinhood accounts.
 - Account-aware CSV imports for Trading 212 and Interactive Brokers.
-- Optional read-only Trading 212 API connections that synchronise official history exports and current positions automatically once a day.
+- Verified read-only Trading 212 API support for Invest and Stocks and Shares ISA accounts, synchronising official history exports and current positions without manual CSV uploads.
 - Region-aware Robinhood UK and US account tracking, with imports enabled as export schemas are validated.
 - Separate histories for each provider, account, and tax wrapper—including general investment accounts, Stocks and Shares ISAs, and supported US brokerage and retirement accounts.
 - Exact quantities, cost basis, average cost, value, and gain/loss calculations.
@@ -63,7 +63,9 @@ Onboarding keeps setup short and reversible:
 3. Accept or skip the local AI recommendation generated for the Mac's hardware.
 4. Import broker CSV exports; Worthweave checks file hashes and transaction identifiers to prevent duplicates.
 
-Trading 212 Invest and Stocks and Shares ISA accounts can instead be connected in **Settings → Broker connections**. Create a separate Trading 212 API key for each account with account, portfolio and history read permissions, then enter its key and secret. Worthweave validates the connection directly with Trading 212 and stores the credentials in macOS Keychain. It never requests order or trading permissions. A sync runs when the app opens if the last successful sync is more than a day old; unfinished Trading 212 reports are checked again without blocking the rest of the app.
+Trading 212 Invest and Stocks and Shares ISA accounts can instead be connected in **Settings → Broker connections**. Create a separate Trading 212 API key for each account with account, portfolio and history read permissions, then enter its key and secret. Worthweave validates the connection directly with Trading 212 and stores the credentials in macOS Keychain. It never requests order or trading permissions.
+
+The first sync imports Trading 212's official history export and current position snapshot. Subsequent syncs are idempotent, so existing activity is not duplicated. Worthweave checks connected accounts when the app opens if the last successful sync is more than a day old, resumes unfinished reports, preserves progress through Trading 212 rate limits, and keeps manual CSV import available as a fallback.
 
 Prices and investment categories are configured after import, when Worthweave knows which holdings require them. Worthweave refreshes official ECB reference exchange rates automatically and keeps manual rates available as overrides. All preferences can be revisited in Settings.
 

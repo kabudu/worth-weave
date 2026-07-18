@@ -178,8 +178,15 @@ function BrokerConnectionsPanel({ accounts }: { accounts: Account[] }) {
   });
   const sync = useMutation({
     mutationFn: syncBroker,
+    onMutate: (accountId) => {
+      setMessage((current) => ({ ...current, [accountId]: "" }));
+    },
     onSuccess: async (result) => {
       setMessage((current) => ({ ...current, [result.account_id]: result.message }));
+      await refreshPortfolio();
+    },
+    onError: async (_error, accountId) => {
+      setMessage((current) => ({ ...current, [accountId]: "" }));
       await refreshPortfolio();
     },
   });
@@ -191,12 +198,12 @@ function BrokerConnectionsPanel({ accounts }: { accounts: Account[] }) {
       const values = credentials[account.id] ?? { key: "", secret: "", environment: "live" as const };
       const busy = (connect.isPending && connect.variables?.accountId === account.id) || (sync.isPending && sync.variables === account.id) || (disconnect.isPending && disconnect.variables === account.id);
       return <article className="broker-connection" key={account.id}><header><div><strong>{account.display_name}</strong><small>{account.account_type === "stocks_and_shares_isa" ? "Stocks and Shares ISA" : "Invest account"}</small></div><span className={`connection-state ${status?.sync_state ?? "disconnected"}`}>{status?.configured ? status.sync_state : "Not connected"}</span></header>
-        {status?.configured ? <div className="broker-connected"><p>{status.last_success_at ? `Last synced ${new Date(status.last_success_at).toLocaleString()}` : "Ready for the first sync"}{status.external_account_id ? ` · account ${status.external_account_id}` : ""}</p><div><button type="button" className="primary-button" disabled={busy} onClick={() => sync.mutate(account.id)}>{sync.isPending && sync.variables === account.id ? "Synchronising…" : status.sync_state === "preparing" ? "Check sync" : "Sync now"}</button><button type="button" className="secondary-button" disabled={busy} onClick={() => disconnect.mutate(account.id)}>Disconnect</button></div></div> : <form onSubmit={(event) => { event.preventDefault(); connect.mutate({ accountId: account.id, values }); }}><label>Environment<select value={values.environment} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, environment: event.target.value as "live" | "demo" } }))}><option value="live">Live account</option><option value="demo">Practice account</option></select></label><label>API key<input type="password" autoComplete="off" required maxLength={512} value={values.key} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, key: event.target.value } }))} /></label><label>API secret<input type="password" autoComplete="off" required maxLength={512} value={values.secret} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, secret: event.target.value } }))} /></label><button className="primary-button" disabled={busy}>Connect read-only</button></form>}
-        {message[account.id] && <small className="connection-message" role="status">{message[account.id]}</small>}
+        {status?.configured ? <div className="broker-connected"><p>{status.last_success_at ? `Last synced ${new Date(status.last_success_at).toLocaleString()}` : "Ready for the first sync"}{status.external_account_id ? ` · account ${status.external_account_id}` : ""}</p><div><button type="button" className="primary-button" disabled={busy} onClick={() => sync.mutate(account.id)}>{sync.isPending && sync.variables === account.id ? "Synchronising…" : status.sync_state === "preparing" ? "Check sync" : status.sync_state === "attention" ? "Retry sync" : "Sync now"}</button><button type="button" className="secondary-button" disabled={busy} onClick={() => disconnect.mutate(account.id)}>Disconnect</button></div></div> : <form onSubmit={(event) => { event.preventDefault(); connect.mutate({ accountId: account.id, values }); }}><label>Environment<select value={values.environment} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, environment: event.target.value as "live" | "demo" } }))}><option value="live">Live account</option><option value="demo">Practice account</option></select></label><label>API key<input type="password" autoComplete="off" required maxLength={512} value={values.key} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, key: event.target.value } }))} /></label><label>API secret<input type="password" autoComplete="off" required maxLength={512} value={values.secret} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, secret: event.target.value } }))} /></label><button className="primary-button" disabled={busy}>Connect read-only</button></form>}
+        {message[account.id] && !status?.last_error && <small className="connection-message" role="status">{message[account.id]}</small>}
         {status?.last_error && <small className="form-error" role="alert">{status.last_error}</small>}
       </article>;
     })}
-    {(statuses.isError || connect.isError || sync.isError || disconnect.isError) && <small className="form-error" role="alert">{String(statuses.error ?? connect.error ?? sync.error ?? disconnect.error)}</small>}
+    {(statuses.isError || connect.isError || disconnect.isError) && <small className="form-error" role="alert">{String(statuses.error ?? connect.error ?? disconnect.error)}</small>}
     <p className="broker-fallback">CSV imports remain available for historical repairs and offline use. Worthweave never receives trading permission.</p>
   </div></section>;
 }

@@ -198,6 +198,25 @@ pub fn record_error(connection: &Connection, account_id: &str, message: &str) ->
     Ok(())
 }
 
+fn sync_state(
+    configured: bool,
+    pending: bool,
+    last_success: bool,
+    last_error: bool,
+) -> &'static str {
+    if !configured {
+        "disconnected"
+    } else if last_error {
+        "attention"
+    } else if pending {
+        "preparing"
+    } else if last_success {
+        "current"
+    } else {
+        "ready"
+    }
+}
+
 pub fn statuses(connection: &Connection) -> Result<Vec<BrokerConnectionStatus>> {
     let mut statement = connection.prepare(
         "SELECT a.id, COALESCE(c.environment, 'live'), c.external_account_id,
@@ -228,17 +247,12 @@ pub fn statuses(connection: &Connection) -> Result<Vec<BrokerConnectionStatus>> 
                 )));
             }
         };
-        let sync_state = if pending.is_some() {
-            "preparing"
-        } else if last_error.is_some() {
-            "attention"
-        } else if last_success_at.is_some() {
-            "current"
-        } else if configured {
-            "ready"
-        } else {
-            "disconnected"
-        };
+        let sync_state = sync_state(
+            configured,
+            pending.is_some(),
+            last_success_at.is_some(),
+            last_error.is_some(),
+        );
         output.push(BrokerConnectionStatus {
             account_id,
             configured,
@@ -736,6 +750,12 @@ mod tests {
             exact(decimal(&serde_json::json!(12.345), "test").expect("decimal")),
             ("12345".into(), 3)
         );
+    }
+
+    #[test]
+    fn a_failed_finished_report_takes_precedence_over_preparing() {
+        assert_eq!(sync_state(true, true, false, true), "attention");
+        assert_eq!(sync_state(true, true, false, false), "preparing");
     }
 
     #[test]

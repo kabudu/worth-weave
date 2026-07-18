@@ -381,7 +381,8 @@ pub fn open(path: &Path) -> Result<Connection> {
            (5, 'reporting_indexes'),
            (6, 'region_aware_broker_accounts'),
            (7, 'generic_corporate_action_metadata'),
-           (8, 'broker_api_connections');
+           (8, 'broker_api_connections'),
+           (9, 'broker_sync_cooldowns');
          CREATE TABLE IF NOT EXISTS broker_connections (
            account_id TEXT PRIMARY KEY NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
            provider TEXT NOT NULL,
@@ -392,8 +393,20 @@ pub fn open(path: &Path) -> Result<Connection> {
            last_error TEXT,
            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
          );
-         PRAGMA user_version = 8;",
+         PRAGMA user_version = 9;",
     )?;
+    let has_retry_after = {
+        let mut statement = connection.prepare("PRAGMA table_info(broker_connections)")?;
+        statement
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "retry_after_at")
+    };
+    if !has_retry_after {
+        connection
+            .execute_batch("ALTER TABLE broker_connections ADD COLUMN retry_after_at TEXT;")?;
+    }
     let bundled: Vec<BundledCorporateAction> =
         serde_json::from_str(include_str!("../resources/corporate-actions.json"))
             .map_err(|error| WorthweaveError::InvalidMarketData(error.to_string()))?;
@@ -414,7 +427,7 @@ pub fn open(path: &Path) -> Result<Connection> {
     Ok(connection)
 }
 
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 #[cfg(test)]
 pub fn schema_version(connection: &Connection) -> Result<i64> {

@@ -2,7 +2,8 @@ use std::io::Write;
 use std::str::FromStr;
 use std::time::Duration;
 
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
+use reqwest::header::RETRY_AFTER;
 use reqwest::{Client, StatusCode, Url};
 use rusqlite::{Connection, OptionalExtension, params};
 use rust_decimal::Decimal;
@@ -143,9 +144,25 @@ async fn response<T: DeserializeOwned>(request: reqwest::RequestBuilder) -> Resu
         StatusCode::FORBIDDEN => Err(WorthweaveError::BrokerSync(
             "The API key needs account, portfolio and history read permissions".into(),
         )),
-        StatusCode::TOO_MANY_REQUESTS => Err(WorthweaveError::BrokerSync(
-            "Trading 212 is rate-limiting requests. Wait a minute and try again".into(),
-        )),
+        StatusCode::TOO_MANY_REQUESTS => {
+            let retry_after_seconds = response
+                .headers()
+                .get(RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| {
+                    value.parse::<u64>().ok().or_else(|| {
+                        DateTime::parse_from_rfc2822(value).ok().map(|at| {
+                            (at.with_timezone(&Utc) - Utc::now()).num_seconds().max(1) as u64
+                        })
+                    })
+                })
+                .unwrap_or(60)
+                .clamp(5, 15 * 60);
+            Err(WorthweaveError::BrokerRateLimited {
+                retry_after_seconds,
+                message: "Trading 212 has temporarily limited requests. Worthweave will preserve your place and wait before trying again".into(),
+            })
+        }
         status if status.is_server_error() => Err(WorthweaveError::BrokerSync(
             "Trading 212 is temporarily unavailable. Your existing data is unchanged".into(),
         )),
@@ -190,10 +207,18 @@ pub fn validate_account(connection: &Connection, account_id: &str) -> Result<()>
     ensure_trading212_account(connection, account_id).map(|_| ())
 }
 
-pub fn record_error(connection: &Connection, account_id: &str, message: &str) -> Result<()> {
+pub fn record_error(
+    connection: &Connection,
+    account_id: &str,
+    message: &str,
+    retry_after_seconds: Option<u64>,
+) -> Result<()> {
+    let retry_after_at = retry_after_seconds
+        .map(|seconds| (Utc::now() + chrono::Duration::seconds(seconds as i64)).to_rfc3339());
     connection.execute(
-        "UPDATE broker_connections SET last_error=?2, updated_at=CURRENT_TIMESTAMP WHERE account_id=?1",
-        params![account_id, message],
+        "UPDATE broker_connections SET last_error=?2, retry_after_at=?3,
+         updated_at=CURRENT_TIMESTAMP WHERE account_id=?1",
+        params![account_id, message, retry_after_at],
     )?;
     Ok(())
 }
@@ -220,7 +245,7 @@ fn sync_state(
 pub fn statuses(connection: &Connection) -> Result<Vec<BrokerConnectionStatus>> {
     let mut statement = connection.prepare(
         "SELECT a.id, COALESCE(c.environment, 'live'), c.external_account_id,
-                c.pending_report_id, c.last_success_at, c.last_error
+                c.pending_report_id, c.last_success_at, c.last_error, c.retry_after_at
          FROM accounts a LEFT JOIN broker_connections c ON c.account_id=a.id
          WHERE a.broker='trading_212' ORDER BY a.created_at, a.id",
     )?;
@@ -232,12 +257,20 @@ pub fn statuses(connection: &Connection) -> Result<Vec<BrokerConnectionStatus>> 
             row.get::<_, Option<String>>(3)?,
             row.get::<_, Option<String>>(4)?,
             row.get::<_, Option<String>>(5)?,
+            row.get::<_, Option<String>>(6)?,
         ))
     })?;
     let mut output = Vec::new();
     for row in rows {
-        let (account_id, environment, external_account_id, pending, last_success_at, last_error) =
-            row?;
+        let (
+            account_id,
+            environment,
+            external_account_id,
+            pending,
+            last_success_at,
+            last_error,
+            retry_after_at,
+        ) = row?;
         let configured = match keychain_entry(&account_id)?.get_password() {
             Ok(value) => !value.is_empty(),
             Err(keyring::Error::NoEntry) => false,
@@ -260,6 +293,7 @@ pub fn statuses(connection: &Connection) -> Result<Vec<BrokerConnectionStatus>> 
             external_account_id,
             last_success_at,
             last_error,
+            retry_after_at,
             sync_state: sync_state.into(),
         });
     }
@@ -503,14 +537,28 @@ async fn download_csv(client: &Client, url: &str) -> Result<Vec<u8>> {
 
 pub fn prepare_sync(connection: &Connection, account_id: &str) -> Result<SyncPlan> {
     let account_type = ensure_trading212_account(connection, account_id)?;
-    let (environment, pending_report): (String, Option<String>) = connection
-        .query_row(
-            "SELECT environment, pending_report_id FROM broker_connections WHERE account_id=?1",
-            [account_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?
-        .ok_or_else(|| WorthweaveError::BrokerSync("Connect this account first".into()))?;
+    let (environment, pending_report, retry_after_at): (String, Option<String>, Option<String>) =
+        connection
+            .query_row(
+                "SELECT environment, pending_report_id, retry_after_at
+             FROM broker_connections WHERE account_id=?1",
+                [account_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?
+            .ok_or_else(|| WorthweaveError::BrokerSync("Connect this account first".into()))?;
+    if let Some(retry_after_at) = retry_after_at
+        .as_deref()
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+    {
+        let remaining = (retry_after_at.with_timezone(&Utc) - Utc::now()).num_seconds();
+        if remaining > 0 {
+            return Err(WorthweaveError::BrokerRateLimited {
+                retry_after_seconds: remaining as u64,
+                message: "Trading 212 is still cooling down. No request was sent".into(),
+            });
+        }
+    }
     let coverage_end: Option<String> = connection.query_row(
         "SELECT MAX(coverage_end) FROM import_batches WHERE account_id=?1",
         [account_id],
@@ -620,7 +668,7 @@ pub fn save_sync(
 ) -> Result<BrokerSyncResult> {
     if let SyncFetch::Requested(report_id) = fetched {
         connection.execute(
-            "UPDATE broker_connections SET pending_report_id=?2, last_error=NULL,
+            "UPDATE broker_connections SET pending_report_id=?2, last_error=NULL, retry_after_at=NULL,
              updated_at=CURRENT_TIMESTAMP WHERE account_id=?1",
             params![plan.account_id, report_id],
         )?;
@@ -717,7 +765,7 @@ pub fn save_sync(
     let positions_updated = save_positions(&transaction, &plan.account_id, &batch_id, &positions)?;
     transaction.execute(
         "UPDATE broker_connections SET pending_report_id=NULL, last_success_at=CURRENT_TIMESTAMP,
-         last_error=NULL, updated_at=CURRENT_TIMESTAMP WHERE account_id=?1",
+         last_error=NULL, retry_after_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE account_id=?1",
         [&plan.account_id],
     )?;
     transaction.commit()?;
@@ -756,6 +804,45 @@ mod tests {
     fn a_failed_finished_report_takes_precedence_over_preparing() {
         assert_eq!(sync_state(true, true, false, true), "attention");
         assert_eq!(sync_state(true, true, false, false), "preparing");
+    }
+
+    #[test]
+    fn active_cooldown_prevents_another_broker_request() {
+        let directory = tempdir().expect("temp directory");
+        let connection = crate::db::open(&directory.path().join("test.db")).expect("database");
+        let account = crate::db::create_account(
+            &connection,
+            &crate::models::CreateAccountInput {
+                broker: "trading_212".into(),
+                jurisdiction: "GB".into(),
+                account_type: "invest".into(),
+                display_name: "Trading 212 Invest".into(),
+            },
+        )
+        .expect("account");
+        connection
+            .execute(
+                "INSERT INTO broker_connections
+                 (account_id, provider, environment, retry_after_at)
+                 VALUES (?1, 'trading_212', 'live', ?2)",
+                params![
+                    account.id,
+                    (Utc::now() + chrono::Duration::minutes(2)).to_rfc3339()
+                ],
+            )
+            .expect("connection");
+
+        let error = match prepare_sync(&connection, &account.id) {
+            Ok(_) => panic!("cooldown should block"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            WorthweaveError::BrokerRateLimited {
+                retry_after_seconds: 1..,
+                ..
+            }
+        ));
     }
 
     #[test]

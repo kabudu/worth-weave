@@ -108,6 +108,7 @@ pub struct BrokerConnectionStatus {
     pub external_account_id: Option<String>,
     pub last_success_at: Option<String>,
     pub last_error: Option<String>,
+    pub retry_after_at: Option<String>,
     pub sync_state: String,
 }
 

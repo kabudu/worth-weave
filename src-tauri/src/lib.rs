@@ -482,9 +482,16 @@ async fn sync_broker(input: BrokerAccountInput, app: AppHandle) -> Result<Broker
         Ok(fetched) => fetched,
         Err(error) => {
             let message = error.to_string();
+            let retry_after_seconds = match &error {
+                WorthweaveError::BrokerRateLimited {
+                    retry_after_seconds,
+                    ..
+                } => Some(*retry_after_seconds),
+                _ => None,
+            };
             let state = app.state::<AppState>();
             let _ = with_connection(&state, |connection| {
-                brokers::record_error(connection, &input.account_id, &message)
+                brokers::record_error(connection, &input.account_id, &message, retry_after_seconds)
             });
             return Err(error);
         }
@@ -497,7 +504,7 @@ async fn sync_broker(input: BrokerAccountInput, app: AppHandle) -> Result<Broker
     if let Err(error) = &result {
         let state = save_app.state::<AppState>();
         let _ = with_connection(&state, |connection| {
-            brokers::record_error(connection, &input.account_id, &error.to_string())
+            brokers::record_error(connection, &input.account_id, &error.to_string(), None)
         });
     }
     result

@@ -6,10 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-19
+
 ### Added
 
 - Read-only Trading 212 API connections for Invest and Stocks and Shares ISA accounts, with account-specific credentials protected by macOS Keychain.
 - Resilient daily broker synchronisation on launch, including official history exports, current position snapshots, idempotent imports, visible sync state, and CSV fallback.
+
+### Fixed
+
+- Preserve pending history reports and observe Trading 212 retry windows when the API rate-limits synchronisation requests.
+- Accept the `Time (UTC)` column used by Trading 212's live API-generated history exports.
 
 ## [0.1.1] - 2026-07-15
 
@@ -51,6 +58,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kabudu/worth-weave/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kabudu/worth-weave/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kabudu/worth-weave/releases/tag/v0.1.0

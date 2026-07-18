@@ -266,6 +266,7 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
         &headers,
         &[
             "Time",
+            "Time (UTC)",
             "Date",
             "Date and time",
             "Date/Time",
@@ -965,6 +966,14 @@ mod tests {
         assert_eq!(parsed.events.len(), 1);
         assert_eq!(parsed.events[0].occurred_at, "2026-07-01T10:00:00");
         assert_eq!(parsed.events[0].event_type, "buy");
+    }
+
+    #[test]
+    fn trading212_live_api_report_accepts_utc_time_header() {
+        let parsed = parse_trading212(b"Action,Time (UTC),ISIN,Ticker,Name,Notes,ID,No. of shares,Price / share,Currency (Price / share),Exchange rate,Total,Currency (Total),Withholding tax,Currency (Withholding tax)\nMarket buy,2026-07-01 10:00:00,GB00TEST0001,TEST,Test plc,,T1,1.25,10.00,GBP,1,12.50,GBP,,\n").expect("valid live API report");
+
+        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events[0].occurred_at, "2026-07-01T10:00:00");
     }
 
     #[test]

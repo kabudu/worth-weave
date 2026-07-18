@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
 
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use csv::StringRecord;
 use rusqlite::{Connection, OptionalExtension, params};
 use rust_decimal::Decimal;
@@ -65,6 +65,12 @@ struct PositionSnapshot {
 
 fn parse_date(value: &str, context: &str) -> Result<(NaiveDate, String)> {
     let value = value.trim();
+    if let Ok(parsed) = DateTime::parse_from_rfc3339(value) {
+        return Ok((
+            parsed.date_naive(),
+            parsed.naive_utc().format("%Y-%m-%dT%H:%M:%S").to_string(),
+        ));
+    }
     for format in [
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d;%H:%M:%S",
@@ -210,6 +216,15 @@ fn field<'a>(
     positions.get(name).and_then(|index| row.get(*index))
 }
 
+fn header_index(headers: &StringRecord, aliases: &[&str]) -> Option<usize> {
+    headers.iter().position(|header| {
+        let header = header.trim();
+        aliases
+            .iter()
+            .any(|alias| header.eq_ignore_ascii_case(alias))
+    })
+}
+
 fn action_type(action: &str) -> &'static str {
     let action = action.to_lowercase();
     if action.contains("buy") {
@@ -244,13 +259,27 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
         .headers()
         .map_err(|error| WorthweaveError::Csv(error.to_string()))?
         .clone();
-    for required in ["Action", "Time", "ID"] {
-        if !headers.iter().any(|header| header == required) {
-            return Err(WorthweaveError::Csv(format!(
-                "Trading 212 export is missing column: {required}"
-            )));
-        }
-    }
+    let action_index = header_index(&headers, &["Action"]).ok_or_else(|| {
+        WorthweaveError::Csv("Trading 212 export is missing column: Action".into())
+    })?;
+    let date_index = header_index(
+        &headers,
+        &[
+            "Time",
+            "Date",
+            "Date and time",
+            "Date/Time",
+            "Created at",
+            "CreatedAt",
+        ],
+    )
+    .ok_or_else(|| {
+        WorthweaveError::Csv(
+            "Trading 212 export is missing a recognised date or time column".into(),
+        )
+    })?;
+    let id_index = header_index(&headers, &["ID"])
+        .ok_or_else(|| WorthweaveError::Csv("Trading 212 export is missing column: ID".into()))?;
     let positions: HashMap<&str, usize> = headers
         .iter()
         .enumerate()
@@ -261,13 +290,13 @@ fn parse_trading212(content: &[u8]) -> Result<ParsedImport> {
     for (offset, record) in reader.records().enumerate() {
         let row =
             record.map_err(|error| WorthweaveError::Csv(format!("row {}: {error}", offset + 2)))?;
-        let action = field(&row, &positions, "Action").unwrap_or("").trim();
+        let action = row.get(action_index).unwrap_or("").trim();
         let (date, occurred_at) = parse_date(
-            field(&row, &positions, "Time").unwrap_or(""),
-            &format!("Time at row {}", offset + 2),
+            row.get(date_index).unwrap_or(""),
+            &format!("date or time at row {}", offset + 2),
         )?;
         dates.push(date);
-        let raw_id = field(&row, &positions, "ID").unwrap_or("").trim();
+        let raw_id = row.get(id_index).unwrap_or("").trim();
         let source = if raw_id.is_empty() {
             stable_id("t212", &row)
         } else {
@@ -928,6 +957,14 @@ mod tests {
                 scale: 2
             })
         );
+    }
+
+    #[test]
+    fn trading212_api_report_accepts_date_header_and_rfc3339_time() {
+        let parsed = parse_trading212(b"Action,Date,ISIN,Ticker,ID,No. of shares,Total,Currency (Total)\nMarket buy,2026-07-01T10:00:00Z,GB00TEST0001,TEST,T1,1.25,10.50,GBP\n").expect("valid API report");
+        assert_eq!(parsed.events.len(), 1);
+        assert_eq!(parsed.events[0].occurred_at, "2026-07-01T10:00:00");
+        assert_eq!(parsed.events[0].event_type, "buy");
     }
 
     #[test]

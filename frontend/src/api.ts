@@ -35,7 +35,8 @@ export type ImportResult = z.infer<typeof importResultSchema>;
 const brokerConnectionStatusSchema = z.object({
   account_id: z.string().uuid(), configured: z.boolean(), environment: z.enum(["live", "demo"]),
   external_account_id: z.string().nullable(), last_success_at: z.string().nullable(),
-  last_error: z.string().nullable(), sync_state: z.enum(["disconnected", "ready", "preparing", "current", "attention"]),
+  last_error: z.string().nullable(), retry_after_at: z.string().nullable(),
+  sync_state: z.enum(["disconnected", "ready", "preparing", "current", "attention"]),
 });
 const brokerSyncResultSchema = z.object({
   account_id: z.string().uuid(), state: z.enum(["preparing", "complete"]),

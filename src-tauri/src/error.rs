@@ -28,6 +28,11 @@ pub enum WorthweaveError {
     InvalidMarketData(String),
     #[error("broker sync failed: {0}")]
     BrokerSync(String),
+    #[error("broker sync paused for {retry_after_seconds} seconds: {message}")]
+    BrokerRateLimited {
+        retry_after_seconds: u64,
+        message: String,
+    },
     #[error("local AI request failed: {0}")]
     LocalAi(String),
     #[error("backup operation failed: {0}")]

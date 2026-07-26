@@ -8,6 +8,7 @@
   --green: #0e5e48;
   --mint: #9de3bf;
   --line: rgba(20, 44, 36, 0.1);
+  --action-control-height: 48px;
 }
 
 * { box-sizing: border-box; }
@@ -131,7 +132,7 @@ footer { display:flex;justify-content:space-between;color:#97a19c;font-size:8px;
 .dialog-columns label { display:grid;gap:6px;margin-top:12px;color:#52615b;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.7px; }
 .dialog-columns input,.dialog-columns select { width:100%;border:1px solid rgba(20,44,36,.13);background:white;border-radius:10px;padding:10px 11px;color:#263a33;font-size:11px;outline:0; }
 .dialog-columns input:focus,.dialog-columns select:focus { border-color:#5aaa7f;box-shadow:0 0 0 3px rgba(90,170,127,.12); }
-.dialog-columns .primary-button,.secondary-button { width:100%;margin-top:16px;padding:11px;border-radius:10px; }
+.dialog-columns .primary-button,.dialog-columns .secondary-button { width:100%;margin-top:16px;padding:11px;border-radius:10px; }
 .secondary-button { border:1px solid rgba(15,76,59,.18);background:#e5f1e9;color:#164f3e;font-size:10px;font-weight:700; }
 .secondary-button:disabled,.primary-button:disabled { opacity:.48;cursor:not-allowed; }
 .file-drop { display:grid;width:100%;min-height:76px;box-sizing:border-box;place-content:center;justify-items:center;gap:6px;margin-top:14px;border:1px dashed rgba(26,92,68,.25);border-radius:12px;padding:17px;text-align:center;background:rgba(221,239,228,.3);cursor:pointer; }
@@ -538,7 +539,19 @@ footer { font-size:10px; }
 :is(.import-dialog,.settings-dialog,.market-dialog,.about-dialog,.ai-result-dialog) {
   width:min(1080px,calc(100vw - 32px));
 }
+:is(.import-dialog,.settings-dialog,.market-dialog,.about-dialog,.ai-result-dialog)
+  :is(.primary-button,.secondary-button) {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:var(--action-control-height);
+  min-height:var(--action-control-height);
+  padding-block:0;
+  line-height:1.2;
+  white-space:nowrap;
+}
 .broker-connected>div { min-width:0; }
+.broker-connected button { height:var(--action-control-height);margin-top:0; }
 .broker-connected .primary-button {
   flex:0 0 auto;
   min-width:104px;

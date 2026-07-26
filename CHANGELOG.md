@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Give every application modal a wider responsive desktop layout and prevent broker synchronisation action labels from wrapping.
+- Standardise primary and secondary modal actions at the same 48px control height.
 
 ## [0.2.0] - 2026-07-19
 

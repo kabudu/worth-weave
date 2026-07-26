@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-26
+
 ### Added
 
 - Read-only IBKR Flex Web Service connections for single-account CSV Activity Flex Queries, with tokens protected by macOS Keychain.
@@ -13,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Correctly validate mixed IBKR Flex sections without mistaking primary-currency values for additional broker accounts.
 - Give every application modal a wider responsive desktop layout and prevent broker synchronisation action labels from wrapping.
 - Standardise primary and secondary modal actions at the same 48px control height.
 
@@ -68,7 +71,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kabudu/worth-weave/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kabudu/worth-weave/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kabudu/worth-weave/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kabudu/worth-weave/releases/tag/v0.1.0

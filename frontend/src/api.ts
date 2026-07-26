@@ -33,7 +33,8 @@ export type AccountType = Account["account_type"];
 export type ImportResult = z.infer<typeof importResultSchema>;
 
 const brokerConnectionStatusSchema = z.object({
-  account_id: z.string().uuid(), configured: z.boolean(), environment: z.enum(["live", "demo"]),
+  account_id: z.string().uuid(), provider: z.enum(["trading_212", "ibkr"]),
+  configured: z.boolean(), environment: z.enum(["live", "demo"]),
   external_account_id: z.string().nullable(), last_success_at: z.string().nullable(),
   last_error: z.string().nullable(), retry_after_at: z.string().nullable(),
   sync_state: z.enum(["disconnected", "ready", "preparing", "current", "attention"]),
@@ -342,6 +343,10 @@ export async function getBrokerConnectionStatuses(): Promise<BrokerConnectionSta
 
 export async function connectTrading212(input: { account_id: string; api_key: string; api_secret: string; environment: "live" | "demo" }): Promise<BrokerConnectionStatus> {
   return brokerConnectionStatusSchema.parse(await invoke("connect_trading212", { input }));
+}
+
+export async function connectIbkrFlex(input: { account_id: string; token: string; query_id: string }): Promise<BrokerConnectionStatus> {
+  return brokerConnectionStatusSchema.parse(await invoke("connect_ibkr_flex", { input }));
 }
 
 export async function disconnectBroker(accountId: string): Promise<void> {

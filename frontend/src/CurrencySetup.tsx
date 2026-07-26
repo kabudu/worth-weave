@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 
-import { completeInitialSetup, connectTrading212, createEncryptedBackup, disconnectBroker, exportPortfolioJson, getBrokerConnectionStatuses, restoreEncryptedBackup, syncBroker, updateSettings, type Account, type CurrencyOption, type InitialAccount } from "./api";
+import { completeInitialSetup, connectIbkrFlex, connectTrading212, createEncryptedBackup, disconnectBroker, exportPortfolioJson, getBrokerConnectionStatuses, restoreEncryptedBackup, syncBroker, updateSettings, type Account, type CurrencyOption, type InitialAccount } from "./api";
 import { AiSettingsPanel } from "./AiSetup";
 
 type CurrencyFormProps = {
@@ -152,9 +152,10 @@ export function SettingsDialog({ accounts, currencies, currentCurrency, open, on
 
 function BrokerConnectionsPanel({ accounts }: { accounts: Account[] }) {
   const queryClient = useQueryClient();
-  const trading212 = accounts.filter((account) => account.broker === "trading_212");
+  const supported = accounts.filter((account) => account.broker === "trading_212" || account.broker === "ibkr");
   const statuses = useQuery({ queryKey: ["broker-connections"], queryFn: getBrokerConnectionStatuses });
-  const [credentials, setCredentials] = useState<Record<string, { key: string; secret: string; environment: "live" | "demo" }>>({});
+  const [tradingCredentials, setTradingCredentials] = useState<Record<string, { key: string; secret: string; environment: "live" | "demo" }>>({});
+  const [ibkrCredentials, setIbkrCredentials] = useState<Record<string, { token: string; queryId: string }>>({});
   const [message, setMessage] = useState<Record<string, string>>({});
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -173,11 +174,19 @@ function BrokerConnectionsPanel({ accounts }: { accounts: Account[] }) {
       queryClient.invalidateQueries({ queryKey: ["reconciliation"] }),
     ]);
   };
-  const connect = useMutation({
+  const connectTrading = useMutation({
     mutationFn: ({ accountId, values }: { accountId: string; values: { key: string; secret: string; environment: "live" | "demo" } }) => connectTrading212({ account_id: accountId, api_key: values.key, api_secret: values.secret, environment: values.environment }),
     onSuccess: async (status) => {
-      setCredentials((current) => ({ ...current, [status.account_id]: { key: "", secret: "", environment: status.environment } }));
+      setTradingCredentials((current) => ({ ...current, [status.account_id]: { key: "", secret: "", environment: status.environment } }));
       setMessage((current) => ({ ...current, [status.account_id]: "Connected securely. Your credentials are stored in macOS Keychain." }));
+      await refreshPortfolio();
+    },
+  });
+  const connectIbkr = useMutation({
+    mutationFn: ({ accountId, values }: { accountId: string; values: { token: string; queryId: string } }) => connectIbkrFlex({ account_id: accountId, token: values.token, query_id: values.queryId }),
+    onSuccess: async (status) => {
+      setIbkrCredentials((current) => ({ ...current, [status.account_id]: { token: "", queryId: "" } }));
+      setMessage((current) => ({ ...current, [status.account_id]: "Connected securely. IBKR is preparing the first Flex report." }));
       await refreshPortfolio();
     },
   });
@@ -196,21 +205,23 @@ function BrokerConnectionsPanel({ accounts }: { accounts: Account[] }) {
     },
   });
   const disconnect = useMutation({ mutationFn: disconnectBroker, onSuccess: refreshPortfolio });
-  if (trading212.length === 0) return <section className="broker-settings"><div><h3>Broker connections</h3><p>Add a Trading 212 account before connecting its API.</p></div><p className="broker-empty">CSV imports remain available from the Import data button.</p></section>;
-  return <section className="broker-settings"><div><h3>Broker connections</h3><p>Synchronise Trading 212 without downloading CSV files. Worthweave requests read-only account, portfolio and history access.</p></div><div className="broker-connection-list">
-    {trading212.map((account) => {
+  if (supported.length === 0) return <section className="broker-settings"><div><h3>Broker connections</h3><p>Add a Trading 212 or IBKR account before connecting it.</p></div><p className="broker-empty">CSV imports remain available from the Import data button.</p></section>;
+  return <section className="broker-settings"><div><h3>Broker connections</h3><p>Synchronise Trading 212 or an IBKR Activity Flex Query without downloading CSV files. Connections are read-only.</p></div><div className="broker-connection-list">
+    {supported.map((account) => {
       const status = statuses.data?.find((candidate) => candidate.account_id === account.id);
-      const values = credentials[account.id] ?? { key: "", secret: "", environment: "live" as const };
+      const tradingValues = tradingCredentials[account.id] ?? { key: "", secret: "", environment: "live" as const };
+      const ibkrValues = ibkrCredentials[account.id] ?? { token: "", queryId: "" };
       const retrySeconds = status?.retry_after_at ? Math.max(0, Math.ceil((new Date(status.retry_after_at).getTime() - now) / 1000)) : 0;
       const coolingDown = retrySeconds > 0;
-      const busy = coolingDown || (connect.isPending && connect.variables?.accountId === account.id) || (sync.isPending && sync.variables === account.id) || (disconnect.isPending && disconnect.variables === account.id);
+      const connecting = (connectTrading.isPending && connectTrading.variables?.accountId === account.id) || (connectIbkr.isPending && connectIbkr.variables?.accountId === account.id);
+      const busy = coolingDown || connecting || (sync.isPending && sync.variables === account.id) || (disconnect.isPending && disconnect.variables === account.id);
       return <article className="broker-connection" key={account.id}><header><div><strong>{account.display_name}</strong><small>{account.account_type === "stocks_and_shares_isa" ? "Stocks and Shares ISA" : "Invest account"}</small></div><span className={`connection-state ${status?.sync_state ?? "disconnected"}`}>{status?.configured ? status.sync_state : "Not connected"}</span></header>
-        {status?.configured ? <div className="broker-connected"><p>{status.last_success_at ? `Last synced ${new Date(status.last_success_at).toLocaleString()}` : "Ready for the first sync"}{status.external_account_id ? ` · account ${status.external_account_id}` : ""}</p><div><button type="button" className="primary-button" disabled={busy} onClick={() => sync.mutate(account.id)}>{sync.isPending && sync.variables === account.id ? "Synchronising…" : coolingDown ? `Retry in ${retrySeconds}s` : status.sync_state === "preparing" ? "Check sync" : status.sync_state === "attention" ? "Retry sync" : "Sync now"}</button><button type="button" className="secondary-button" disabled={disconnect.isPending && disconnect.variables === account.id} onClick={() => disconnect.mutate(account.id)}>Disconnect</button></div></div> : <form onSubmit={(event) => { event.preventDefault(); connect.mutate({ accountId: account.id, values }); }}><label>Environment<select value={values.environment} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, environment: event.target.value as "live" | "demo" } }))}><option value="live">Live account</option><option value="demo">Practice account</option></select></label><label>API key<input type="password" autoComplete="off" required maxLength={512} value={values.key} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, key: event.target.value } }))} /></label><label>API secret<input type="password" autoComplete="off" required maxLength={512} value={values.secret} onChange={(event) => setCredentials((current) => ({ ...current, [account.id]: { ...values, secret: event.target.value } }))} /></label><button className="primary-button" disabled={busy}>Connect read-only</button></form>}
+        {status?.configured ? <div className="broker-connected"><p>{status.last_success_at ? `Last synced ${new Date(status.last_success_at).toLocaleString()}` : "Ready for the first sync"}{status.external_account_id ? ` · account ${status.external_account_id}` : ""}</p><div><button type="button" className="primary-button" disabled={busy} onClick={() => sync.mutate(account.id)}>{sync.isPending && sync.variables === account.id ? "Synchronising…" : coolingDown ? `Retry in ${retrySeconds}s` : status.sync_state === "preparing" ? "Check sync" : status.sync_state === "attention" ? "Retry sync" : "Sync now"}</button><button type="button" className="secondary-button" disabled={disconnect.isPending && disconnect.variables === account.id} onClick={() => disconnect.mutate(account.id)}>Disconnect</button></div></div> : account.broker === "ibkr" ? <form onSubmit={(event) => { event.preventDefault(); connectIbkr.mutate({ accountId: account.id, values: ibkrValues }); }}><label>Flex token<input type="password" autoComplete="off" required maxLength={512} value={ibkrValues.token} onChange={(event) => setIbkrCredentials((current) => ({ ...current, [account.id]: { ...ibkrValues, token: event.target.value } }))} /></label><label>Activity Query ID<input inputMode="numeric" pattern="[0-9]+" autoComplete="off" required maxLength={128} value={ibkrValues.queryId} onChange={(event) => setIbkrCredentials((current) => ({ ...current, [account.id]: { ...ibkrValues, queryId: event.target.value } }))} /></label><small>Use a CSV Activity Flex Query containing one IBKR account. The setup guide lists the required sections.</small><button className="primary-button" disabled={busy}>{connecting ? "Connecting…" : "Connect Flex Query"}</button></form> : <form onSubmit={(event) => { event.preventDefault(); connectTrading.mutate({ accountId: account.id, values: tradingValues }); }}><label>Environment<select value={tradingValues.environment} onChange={(event) => setTradingCredentials((current) => ({ ...current, [account.id]: { ...tradingValues, environment: event.target.value as "live" | "demo" } }))}><option value="live">Live account</option><option value="demo">Practice account</option></select></label><label>API key<input type="password" autoComplete="off" required maxLength={512} value={tradingValues.key} onChange={(event) => setTradingCredentials((current) => ({ ...current, [account.id]: { ...tradingValues, key: event.target.value } }))} /></label><label>API secret<input type="password" autoComplete="off" required maxLength={512} value={tradingValues.secret} onChange={(event) => setTradingCredentials((current) => ({ ...current, [account.id]: { ...tradingValues, secret: event.target.value } }))} /></label><button className="primary-button" disabled={busy}>{connecting ? "Connecting…" : "Connect read-only"}</button></form>}
         {message[account.id] && !status?.last_error && <small className="connection-message" role="status">{message[account.id]}</small>}
         {status?.last_error && <small className="form-error" role="alert">{status.last_error}</small>}
       </article>;
     })}
-    {(statuses.isError || connect.isError || disconnect.isError) && <small className="form-error" role="alert">{String(statuses.error ?? connect.error ?? disconnect.error)}</small>}
+    {(statuses.isError || connectTrading.isError || connectIbkr.isError || disconnect.isError) && <small className="form-error" role="alert">{String(statuses.error ?? connectTrading.error ?? connectIbkr.error ?? disconnect.error)}</small>}
     <p className="broker-fallback">CSV imports remain available for historical repairs and offline use. Worthweave never receives trading permission.</p>
   </div></section>;
 }

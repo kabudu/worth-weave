@@ -25,6 +25,7 @@ React UI <- typed Tauri IPC <- deterministic views <----+
 ## Components
 
 - `src-tauri/src/imports.rs`: bounded, account-aware Trading 212 and IBKR adapters plus explicit rejection for unvalidated broker schemas.
+- `src-tauri/src/brokers.rs`: read-only Trading 212 and IBKR Flex transports, Keychain credential lifecycle, bounded asynchronous report retrieval, and dispatch into the shared import boundary.
 - `src-tauri/src/db.rs`: bundled SQLite schema and persistence boundary.
 - `src-tauri/src/lib.rs`: minimal typed commands exposed to the webview.
 - `frontend`: React/TypeScript interface using Tailwind 4 design tokens.

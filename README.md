@@ -41,6 +41,7 @@ The screenshots below use Worthweave's isolated showcase profile and entirely fi
 - A consolidated view across Trading 212, Interactive Brokers, and Robinhood accounts.
 - Account-aware CSV imports for Trading 212 and Interactive Brokers.
 - Verified read-only Trading 212 API support for Invest and Stocks and Shares ISA accounts, synchronising official history exports and current positions without manual CSV uploads.
+- Read-only IBKR Flex Web Service support, synchronising a preconfigured single-account Activity Flex Query through the same validated import pipeline.
 - Region-aware Robinhood UK and US account tracking, with imports enabled as export schemas are validated.
 - Separate histories for each provider, account, and tax wrapper—including general investment accounts, Stocks and Shares ISAs, and supported US brokerage and retirement accounts.
 - Exact quantities, cost basis, average cost, value, and gain/loss calculations.
@@ -66,6 +67,8 @@ Onboarding keeps setup short and reversible:
 Trading 212 Invest and Stocks and Shares ISA accounts can instead be connected in **Settings → Broker connections**. Create a separate Trading 212 API key for each account with account, portfolio and history read permissions, then enter its key and secret. Worthweave validates the connection directly with Trading 212 and stores the credentials in macOS Keychain. It never requests order or trading permissions.
 
 The first sync imports Trading 212's official history export and current position snapshot. Subsequent syncs are idempotent, so existing activity is not duplicated. Worthweave checks connected accounts when the app opens if the last successful sync is more than a day old, resumes unfinished reports, preserves progress through Trading 212 rate limits, and keeps manual CSV import available as a fallback.
+
+IBKR accounts can also be connected in **Settings → Broker connections** using an IBKR Flex Web Service token and the numeric ID of a CSV Activity Flex Query. Configure one account per query and include the sections listed in [the import guide](docs/data-imports.md#ibkr-flex-web-service-synchronisation). Worthweave stores the token and query ID in macOS Keychain, polls IBKR's asynchronous report service, and rejects reports that contain no account or more than one account.
 
 Prices and investment categories are configured after import, when Worthweave knows which holdings require them. Worthweave refreshes official ECB reference exchange rates automatically and keeps manual rates available as overrides. All preferences can be revisited in Settings.
 

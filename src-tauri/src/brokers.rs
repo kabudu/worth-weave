@@ -984,12 +984,17 @@ fn ibkr_account_id(csv: &[u8]) -> Result<String> {
     let mut accounts = std::collections::BTreeSet::new();
     for record in reader.records() {
         let record = record.map_err(|error| WorthweaveError::Csv(error.to_string()))?;
-        if record
+        let first = record
             .get(0)
-            .map(|value| value.trim_start_matches('\u{feff}'))
-            == Some("ClientAccountID")
-        {
+            .map(|value| value.trim_start_matches('\u{feff}'));
+        if first == Some("ClientAccountID") {
             account_column = Some(0);
+            continue;
+        }
+        if first == Some("CurrencyPrimary")
+            && record.iter().any(|value| value == "SettlementPolicyMethod")
+        {
+            account_column = None;
             continue;
         }
         if let Some(column) = account_column
@@ -1231,7 +1236,7 @@ mod tests {
 
     #[test]
     fn ibkr_report_must_contain_exactly_one_account() {
-        let one = b"ClientAccountID,Symbol,Quantity\nU12345,AAPL,2\nClientAccountID,Date,Amount\nU12345,2026-01-01,10\n";
+        let one = b"ClientAccountID,Symbol,Quantity\nU12345,AAPL,2\nCurrencyPrimary,SettlementPolicyMethod\nGBP,Default\nClientAccountID,Date,Amount\nU12345,2026-01-01,10\n";
         assert_eq!(ibkr_account_id(one).expect("account"), "U12345");
         let multiple = b"ClientAccountID,Symbol,Quantity\nU12345,AAPL,2\nU67890,MSFT,1\n";
         assert!(ibkr_account_id(multiple).is_err());

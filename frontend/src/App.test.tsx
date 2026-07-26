@@ -122,7 +122,7 @@ test("offers a read-only Trading 212 connection per local account", async () => 
   const accountId = crypto.randomUUID();
   vi.mocked(invoke).mockImplementation((command, args) => {
     if (command === "list_accounts") return Promise.resolve([{ id: accountId, broker: "trading_212", jurisdiction: "GB", account_type: "stocks_and_shares_isa", display_name: "Trading 212 ISA", base_currency: "GBP" }]);
-    if (command === "broker_connection_statuses") return Promise.resolve([{ account_id: accountId, configured: false, environment: "live", external_account_id: null, last_success_at: null, last_error: null, sync_state: "disconnected" }]);
+    if (command === "broker_connection_statuses") return Promise.resolve([{ account_id: accountId, provider: "trading_212", configured: false, environment: "live", external_account_id: null, last_success_at: null, last_error: null, retry_after_at: null, sync_state: "disconnected" }]);
     return nativeImplementation!(command, args);
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -134,6 +134,25 @@ test("offers a read-only Trading 212 connection per local account", async () => 
   expect(screen.getAllByText("Trading 212 ISA").length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: /connect read-only/i })).toBeEnabled();
   expect(screen.getByText(/never receives trading permission/i)).toBeInTheDocument();
+});
+
+test("offers an IBKR Flex connection per local IBKR account", async () => {
+  mockNativeCommands(true);
+  const nativeImplementation = vi.mocked(invoke).getMockImplementation();
+  const accountId = crypto.randomUUID();
+  vi.mocked(invoke).mockImplementation((command, args) => {
+    if (command === "list_accounts") return Promise.resolve([{ id: accountId, broker: "ibkr", jurisdiction: "GB", account_type: "invest", display_name: "IBKR Invest", base_currency: "GBP" }]);
+    if (command === "broker_connection_statuses") return Promise.resolve([{ account_id: accountId, provider: "ibkr", configured: false, environment: "live", external_account_id: null, last_success_at: null, last_error: null, retry_after_at: null, sync_state: "disconnected" }]);
+    return nativeImplementation!(command, args);
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  expect(await screen.findByRole("heading", { name: /your wealth, in focus/i })).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole("button", { name: /settings/i })[0]!);
+  expect(await screen.findByLabelText("Flex token")).toBeInTheDocument();
+  expect(screen.getByLabelText("Activity Query ID")).toHaveAttribute("inputmode", "numeric");
+  expect(screen.getByRole("button", { name: /connect flex query/i })).toBeEnabled();
 });
 
 test("presents private AI markdown as a structured results dialog", async () => {

@@ -17,10 +17,12 @@ Status: implemented for Invest and Stocks and Shares ISA accounts.
 
 ### B2. Interactive Brokers Flex synchronisation
 
-Status: planned.
+Status: implemented for preconfigured, single-account CSV Activity Flex Queries.
 
-- Retrieve the user's preconfigured Activity Flex Query through the Flex Web Service.
-- Reuse the existing multi-section IBKR parser and reconciliation model.
+- Account-specific Flex tokens and query IDs stored in macOS Keychain.
+- Asynchronous report requests and polling through Flex Web Service version 3.
+- Existing multi-section IBKR parser, immutable event store, snapshots, duplicate checks and reconciliation reused without a second financial-data path.
+- One-account report validation, bounded downloads, rate-limit-aware errors, launch catch-up and CSV fallback.
 - Keep Client Portal Web API positions as a later optional intraday enhancement.
 
 ## Product principles

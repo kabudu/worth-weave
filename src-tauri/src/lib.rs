@@ -16,12 +16,12 @@ use db::AppState;
 use error::{Result, WorthweaveError};
 use models::{
     Account, ActivityEvent, AiRecommendation, AllocationReport, AppSettings, BackupInput,
-    BrokerAccountInput, BrokerConnectionStatus, BrokerSyncResult, ConnectTrading212Input,
-    CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate, FxRefreshResult, Holding,
-    ImportResult, IncomeSummary, MassiveProviderStatus, MassiveRefreshResult, PortfolioExplanation,
-    PortfolioSnapshot, PortfolioSummary, PriceQuote, ReconciliationItem, SaveAiSettingsInput,
-    SaveMassiveApiKeyInput, SetFxRateInput, SetPriceInput, TotalReturnAttribution,
-    UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
+    BrokerAccountInput, BrokerConnectionStatus, BrokerSyncResult, ConnectIbkrFlexInput,
+    ConnectTrading212Input, CreateAccountInput, CurrencyOption, ExplainPortfolioInput, FxRate,
+    FxRefreshResult, Holding, ImportResult, IncomeSummary, MassiveProviderStatus,
+    MassiveRefreshResult, PortfolioExplanation, PortfolioSnapshot, PortfolioSummary, PriceQuote,
+    ReconciliationItem, SaveAiSettingsInput, SaveMassiveApiKeyInput, SetFxRateInput, SetPriceInput,
+    TotalReturnAttribution, UpdateInstrumentMetadataInput, UpdateSettingsInput, ValuationSummary,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -464,6 +464,24 @@ async fn connect_trading212(
 }
 
 #[tauri::command]
+async fn connect_ibkr_flex(
+    input: ConnectIbkrFlexInput,
+    app: AppHandle,
+) -> Result<BrokerConnectionStatus> {
+    {
+        let state = app.state::<AppState>();
+        with_connection(&state, |connection| {
+            brokers::validate_ibkr_account(connection, &input.account_id)
+        })?;
+    }
+    let reference = brokers::verify_ibkr_connection(&input).await?;
+    with_connection_blocking(app, move |connection| {
+        brokers::save_ibkr_connection(connection, &input, reference)
+    })
+    .await
+}
+
+#[tauri::command]
 fn disconnect_broker(input: BrokerAccountInput, state: State<'_, AppState>) -> Result<()> {
     with_connection(&state, |connection| {
         brokers::disconnect(connection, &input.account_id)
@@ -612,6 +630,7 @@ pub fn run() {
             import_broker_file,
             broker_connection_statuses,
             connect_trading212,
+            connect_ibkr_flex,
             disconnect_broker,
             sync_broker
         ])

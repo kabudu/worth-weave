@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Read-only IBKR Flex Web Service connections for single-account CSV Activity Flex Queries, with tokens protected by macOS Keychain.
+- Bounded asynchronous IBKR report polling, provider-specific error handling, account-identity validation, and reuse of the existing atomic, idempotent import pipeline.
+
 ## [0.2.0] - 2026-07-19
 
 ### Added

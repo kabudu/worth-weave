@@ -96,6 +96,13 @@ pub struct ConnectTrading212Input {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ConnectIbkrFlexInput {
+    pub account_id: String,
+    pub token: String,
+    pub query_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct BrokerAccountInput {
     pub account_id: String,
 }
@@ -103,6 +110,7 @@ pub struct BrokerAccountInput {
 #[derive(Debug, Clone, Serialize)]
 pub struct BrokerConnectionStatus {
     pub account_id: String,
+    pub provider: String,
     pub configured: bool,
     pub environment: String,
     pub external_account_id: Option<String>,

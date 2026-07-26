@@ -13,7 +13,7 @@
 - The Tauri webview uses a narrow IPC allowlist and a restrictive content security policy; no local HTTP server is exposed.
 - Imports use bounded file sizes, schema validation, content hashes, and atomic transactions.
 - Broker adapters are read-only and do not include order-placement capability.
-- Account-specific Trading 212 API credentials and market-data tokens are stored in macOS Keychain rather than SQLite.
+- Account-specific Trading 212 API credentials, IBKR Flex tokens and query IDs, and market-data tokens are stored in macOS Keychain rather than SQLite.
 - Public macOS releases are signed, notarised and verified by the automated release workflow.
 - Database errors do not expose raw records to the interface.
 - Dependency lockfiles are committed and audited at milestones.
@@ -39,6 +39,7 @@ These are release requirements before distribution beyond a trusted local user.
 - Local-AI endpoints are parsed structurally and reject remote hosts disguised with a loopback URL prefix or user-information authority. Responses are streamed with a hard 1 MiB ceiling even when the runtime omits `Content-Length`; broker text is explicitly treated as untrusted prompt data.
 - Broker imports use bounded reads rather than trusting file metadata, enforce a 50 MiB/500,000-row ceiling, reject oversized identifiers, and preserve existing broker snapshots rather than rewriting imported source values.
 - Trading 212 connections use only the documented HTTPS API hosts, validate credentials before storing them, request read-only account/portfolio/history scopes, bound downloaded reports to 50 MiB, and never log or persist credentials in SQLite. Broker-generated CSVs pass through the same validation and idempotency boundary as manual imports.
+- IBKR connections use only the documented Flex Web Service version 3 HTTPS endpoints, use the provider-required programmatic user agent, validate a token and query before storage, cap responses at 50 MiB, and never log or persist credentials in SQLite. A report must identify exactly one account and must continue to match the account first returned by that connection.
 - Encrypted backup, restore, and JSON export stream through owner-only temporary files instead of retaining whole databases in memory. Restore validates integrity, schema compatibility, and foreign-key relationships before replacement; destructive restore requires explicit UI acknowledgement.
 - The application data directory is forced to mode `0700` and the SQLite file to `0600` on Unix/macOS. The CSP separates inline style attributes from style resources and denies objects, frames, workers, base-URL changes, and form navigation.
 - Backup/export commands accept only their documented file extensions, reducing arbitrary overwrite scope if the webview is ever compromised.

@@ -3,6 +3,8 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use chrono::{DateTime, SecondsFormat, Utc};
+use quick_xml::Reader;
+use quick_xml::events::Event;
 use reqwest::header::RETRY_AFTER;
 use reqwest::{Client, StatusCode, Url};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -15,17 +17,30 @@ use uuid::Uuid;
 
 use crate::error::{Result, WorthweaveError};
 use crate::imports;
-use crate::models::{BrokerConnectionStatus, BrokerSyncResult, ConnectTrading212Input};
+use crate::models::{
+    BrokerConnectionStatus, BrokerSyncResult, ConnectIbkrFlexInput, ConnectTrading212Input,
+};
 
-const KEYCHAIN_SERVICE: &str = "com.worthweave.app.broker.trading212";
+const TRADING212_KEYCHAIN_SERVICE: &str = "com.worthweave.app.broker.trading212";
+const IBKR_KEYCHAIN_SERVICE: &str = "com.worthweave.app.broker.ibkr-flex";
 const LIVE_BASE: &str = "https://live.trading212.com/api/v0/";
 const DEMO_BASE: &str = "https://demo.trading212.com/api/v0/";
+const IBKR_SEND_REQUEST: &str =
+    "https://www.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest";
+const IBKR_GET_STATEMENT: &str =
+    "https://www.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement";
 const MAX_DOWNLOAD_BYTES: usize = 50 * 1024 * 1024;
 
 #[derive(Clone, Deserialize, Serialize)]
 struct Credentials {
     api_key: String,
     api_secret: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct IbkrCredentials {
+    token: String,
+    query_id: String,
 }
 
 #[derive(Deserialize)]
@@ -36,12 +51,14 @@ pub(crate) struct AccountSummary {
 }
 
 pub(crate) struct SyncPlan {
+    provider: String,
     account_id: String,
     account_type: String,
     environment: String,
     pending_report: Option<String>,
     coverage_end: Option<String>,
-    credentials: Credentials,
+    credentials: Option<Credentials>,
+    ibkr_credentials: Option<IbkrCredentials>,
 }
 
 pub(crate) enum SyncFetch {
@@ -55,6 +72,9 @@ pub(crate) enum SyncFetch {
         positions: Vec<Position>,
         coverage_start: String,
         coverage_end: String,
+    },
+    IbkrReady {
+        csv: Vec<u8>,
     },
 }
 
@@ -100,8 +120,17 @@ pub(crate) struct Position {
     wallet_impact: Option<WalletImpact>,
 }
 
-fn keychain_entry(account_id: &str) -> Result<keyring::Entry> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, account_id).map_err(|error| {
+fn keychain_entry(provider: &str, account_id: &str) -> Result<keyring::Entry> {
+    let service = match provider {
+        "trading_212" => TRADING212_KEYCHAIN_SERVICE,
+        "ibkr" => IBKR_KEYCHAIN_SERVICE,
+        _ => {
+            return Err(WorthweaveError::BrokerSync(
+                "This broker does not support API connections".into(),
+            ));
+        }
+    };
+    keyring::Entry::new(service, account_id).map_err(|error| {
         WorthweaveError::BrokerSync(format!("macOS Keychain is unavailable: {error}"))
     })
 }
@@ -123,6 +152,167 @@ fn client() -> Result<Client> {
         .user_agent(concat!("Worthweave/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|_| WorthweaveError::BrokerSync("Could not prepare the secure connection".into()))
+}
+
+fn ibkr_client() -> Result<Client> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(30))
+        .user_agent("Java")
+        .build()
+        .map_err(|_| WorthweaveError::BrokerSync("Could not prepare the secure connection".into()))
+}
+
+fn xml_fields(content: &[u8]) -> Result<std::collections::HashMap<String, String>> {
+    let mut reader = Reader::from_reader(content);
+    reader.config_mut().trim_text(true);
+    let mut fields = std::collections::HashMap::new();
+    let mut current = None;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(tag)) => {
+                current = Some(String::from_utf8_lossy(tag.name().as_ref()).into_owned());
+            }
+            Ok(Event::Text(text)) => {
+                if let Some(name) = current.take() {
+                    fields.insert(
+                        name,
+                        text.decode()
+                            .map_err(|_| {
+                                WorthweaveError::BrokerSync(
+                                    "IBKR returned an unreadable response".into(),
+                                )
+                            })?
+                            .into_owned(),
+                    );
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => {
+                return Err(WorthweaveError::BrokerSync(
+                    "IBKR returned an unreadable response".into(),
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(fields)
+}
+
+fn ibkr_error(fields: &std::collections::HashMap<String, String>) -> WorthweaveError {
+    let code = fields.get("ErrorCode").map(String::as_str).unwrap_or("");
+    match code {
+        "1012" => WorthweaveError::BrokerSync(
+            "The IBKR Flex token has expired. Generate a new token in Client Portal".into(),
+        ),
+        "1013" => WorthweaveError::BrokerSync(
+            "IBKR rejected this Mac's IP address. Check the token's IP restriction".into(),
+        ),
+        "1014" => WorthweaveError::BrokerSync(
+            "IBKR did not recognise this Activity Flex Query ID".into(),
+        ),
+        "1015" => WorthweaveError::BrokerSync("IBKR did not accept this Flex token".into()),
+        "1018" => WorthweaveError::BrokerRateLimited {
+            retry_after_seconds: 60,
+            message: "IBKR has temporarily limited Flex requests. Worthweave will wait before trying again".into(),
+        },
+        "1019" => WorthweaveError::BrokerSync("IBKR is still preparing the Flex report".into()),
+        _ => WorthweaveError::BrokerSync(
+            fields
+                .get("ErrorMessage")
+                .map(|message| format!("IBKR could not prepare the Flex report: {message}"))
+                .unwrap_or_else(|| "IBKR could not prepare the Flex report".into()),
+        ),
+    }
+}
+
+async fn ibkr_bytes(request: reqwest::RequestBuilder) -> Result<Vec<u8>> {
+    let response = request.send().await.map_err(|error| {
+        if error.is_timeout() {
+            WorthweaveError::BrokerSync(
+                "IBKR took too long to respond. Your existing data is unchanged".into(),
+            )
+        } else {
+            WorthweaveError::BrokerSync(
+                "IBKR is currently unreachable. Your existing data is unchanged".into(),
+            )
+        }
+    })?;
+    if response
+        .content_length()
+        .is_some_and(|size| size as usize > MAX_DOWNLOAD_BYTES)
+    {
+        return Err(WorthweaveError::ImportTooLarge);
+    }
+    if !response.status().is_success() {
+        return Err(WorthweaveError::BrokerSync(format!(
+            "IBKR rejected the Flex request ({})",
+            response.status()
+        )));
+    }
+    let bytes = response.bytes().await.map_err(|_| {
+        WorthweaveError::BrokerSync("The IBKR Flex download was interrupted".into())
+    })?;
+    if bytes.len() > MAX_DOWNLOAD_BYTES {
+        return Err(WorthweaveError::ImportTooLarge);
+    }
+    Ok(bytes.to_vec())
+}
+
+async fn request_ibkr_report(credentials: &IbkrCredentials) -> Result<String> {
+    let mut url = Url::parse(IBKR_SEND_REQUEST)
+        .map_err(|_| WorthweaveError::BrokerSync("The IBKR service URL is invalid".into()))?;
+    url.query_pairs_mut()
+        .append_pair("t", &credentials.token)
+        .append_pair("q", &credentials.query_id)
+        .append_pair("v", "3");
+    let bytes = ibkr_bytes(ibkr_client()?.get(url)).await?;
+    let fields = xml_fields(&bytes)?;
+    if fields
+        .get("Status")
+        .is_none_or(|status| status != "Success")
+    {
+        return Err(ibkr_error(&fields));
+    }
+    fields
+        .get("ReferenceCode")
+        .filter(|value| !value.is_empty() && value.len() <= 128)
+        .cloned()
+        .ok_or_else(|| WorthweaveError::BrokerSync("IBKR returned no report reference".into()))
+}
+
+async fn retrieve_ibkr_report(credentials: &IbkrCredentials, reference: &str) -> Result<SyncFetch> {
+    let mut url = Url::parse(IBKR_GET_STATEMENT)
+        .map_err(|_| WorthweaveError::BrokerSync("The IBKR service URL is invalid".into()))?;
+    url.query_pairs_mut()
+        .append_pair("q", reference)
+        .append_pair("t", &credentials.token)
+        .append_pair("v", "3");
+    let bytes = ibkr_bytes(ibkr_client()?.get(url)).await?;
+    let content = bytes
+        .strip_prefix(b"\xEF\xBB\xBF")
+        .unwrap_or(bytes.as_slice());
+    if content
+        .iter()
+        .copied()
+        .find(|byte| !byte.is_ascii_whitespace())
+        == Some(b'<')
+    {
+        let fields = xml_fields(content)?;
+        if fields.get("ErrorCode").map(String::as_str) == Some("1019") {
+            return Ok(SyncFetch::Preparing {
+                coverage_start: None,
+                coverage_end: None,
+            });
+        }
+        return Err(ibkr_error(&fields));
+    }
+    if bytes.is_empty() {
+        return Err(WorthweaveError::BrokerSync(
+            "IBKR returned an empty Flex report".into(),
+        ));
+    }
+    Ok(SyncFetch::IbkrReady { csv: bytes })
 }
 
 async fn response<T: DeserializeOwned>(request: reqwest::RequestBuilder) -> Result<T> {
@@ -176,7 +366,7 @@ async fn response<T: DeserializeOwned>(request: reqwest::RequestBuilder) -> Resu
 }
 
 fn credentials(account_id: &str) -> Result<Credentials> {
-    let stored = keychain_entry(account_id)?
+    let stored = keychain_entry("trading_212", account_id)?
         .get_password()
         .map_err(|error| match error {
             keyring::Error::NoEntry => {
@@ -186,6 +376,22 @@ fn credentials(account_id: &str) -> Result<Credentials> {
                 "Could not read the connection from macOS Keychain: {other}"
             )),
         })?;
+    serde_json::from_str(&stored)
+        .map_err(|_| WorthweaveError::BrokerSync("The stored broker connection is invalid".into()))
+}
+
+fn ibkr_credentials(account_id: &str) -> Result<IbkrCredentials> {
+    let stored =
+        keychain_entry("ibkr", account_id)?
+            .get_password()
+            .map_err(|error| match error {
+                keyring::Error::NoEntry => {
+                    WorthweaveError::BrokerSync("Connect this IBKR account first".into())
+                }
+                other => WorthweaveError::BrokerSync(format!(
+                    "Could not read the connection from macOS Keychain: {other}"
+                )),
+            })?;
     serde_json::from_str(&stored)
         .map_err(|_| WorthweaveError::BrokerSync("The stored broker connection is invalid".into()))
 }
@@ -201,6 +407,17 @@ fn ensure_trading212_account(connection: &Connection, account_id: &str) -> Resul
         .ok_or_else(|| {
             WorthweaveError::BrokerSync("Choose a Trading 212 Invest or ISA account".into())
         })
+}
+
+fn ensure_ibkr_account(connection: &Connection, account_id: &str) -> Result<String> {
+    connection
+        .query_row(
+            "SELECT account_type FROM accounts WHERE id=?1 AND broker='ibkr'",
+            [account_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| WorthweaveError::BrokerSync("Choose an IBKR Invest or ISA account".into()))
 }
 
 pub fn validate_account(connection: &Connection, account_id: &str) -> Result<()> {
@@ -244,26 +461,28 @@ fn sync_state(
 
 pub fn statuses(connection: &Connection) -> Result<Vec<BrokerConnectionStatus>> {
     let mut statement = connection.prepare(
-        "SELECT a.id, COALESCE(c.environment, 'live'), c.external_account_id,
+        "SELECT a.id, a.broker, COALESCE(c.environment, 'live'), c.external_account_id,
                 c.pending_report_id, c.last_success_at, c.last_error, c.retry_after_at
          FROM accounts a LEFT JOIN broker_connections c ON c.account_id=a.id
-         WHERE a.broker='trading_212' ORDER BY a.created_at, a.id",
+         WHERE a.broker IN ('trading_212', 'ibkr') ORDER BY a.created_at, a.id",
     )?;
     let rows = statement.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
-            row.get::<_, Option<String>>(2)?,
+            row.get::<_, String>(2)?,
             row.get::<_, Option<String>>(3)?,
             row.get::<_, Option<String>>(4)?,
             row.get::<_, Option<String>>(5)?,
             row.get::<_, Option<String>>(6)?,
+            row.get::<_, Option<String>>(7)?,
         ))
     })?;
     let mut output = Vec::new();
     for row in rows {
         let (
             account_id,
+            provider,
             environment,
             external_account_id,
             pending,
@@ -271,7 +490,7 @@ pub fn statuses(connection: &Connection) -> Result<Vec<BrokerConnectionStatus>> 
             last_error,
             retry_after_at,
         ) = row?;
-        let configured = match keychain_entry(&account_id)?.get_password() {
+        let configured = match keychain_entry(&provider, &account_id)?.get_password() {
             Ok(value) => !value.is_empty(),
             Err(keyring::Error::NoEntry) => false,
             Err(error) => {
@@ -288,6 +507,7 @@ pub fn statuses(connection: &Connection) -> Result<Vec<BrokerConnectionStatus>> 
         );
         output.push(BrokerConnectionStatus {
             account_id,
+            provider,
             configured,
             environment,
             external_account_id,
@@ -336,7 +556,7 @@ pub fn save_connection(
         api_secret: secret.into(),
     })
     .map_err(|_| WorthweaveError::BrokerSync("Could not protect the connection".into()))?;
-    keychain_entry(&input.account_id)?
+    keychain_entry("trading_212", &input.account_id)?
         .set_password(&encoded)
         .map_err(|error| {
             WorthweaveError::BrokerSync(format!(
@@ -362,9 +582,73 @@ pub fn save_connection(
         .ok_or(WorthweaveError::AccountNotFound)
 }
 
+pub fn validate_ibkr_account(connection: &Connection, account_id: &str) -> Result<()> {
+    ensure_ibkr_account(connection, account_id).map(|_| ())
+}
+
+pub async fn verify_ibkr_connection(input: &ConnectIbkrFlexInput) -> Result<String> {
+    let token = input.token.trim();
+    let query_id = input.query_id.trim();
+    if token.is_empty()
+        || query_id.is_empty()
+        || token.len() > 512
+        || query_id.len() > 128
+        || !query_id.chars().all(|character| character.is_ascii_digit())
+    {
+        return Err(WorthweaveError::BrokerSync(
+            "Enter the complete IBKR Flex token and numeric Activity Query ID".into(),
+        ));
+    }
+    request_ibkr_report(&IbkrCredentials {
+        token: token.into(),
+        query_id: query_id.into(),
+    })
+    .await
+}
+
+pub fn save_ibkr_connection(
+    connection: &mut Connection,
+    input: &ConnectIbkrFlexInput,
+    reference: String,
+) -> Result<BrokerConnectionStatus> {
+    ensure_ibkr_account(connection, &input.account_id)?;
+    let encoded = serde_json::to_string(&IbkrCredentials {
+        token: input.token.trim().into(),
+        query_id: input.query_id.trim().into(),
+    })
+    .map_err(|_| WorthweaveError::BrokerSync("Could not protect the connection".into()))?;
+    keychain_entry("ibkr", &input.account_id)?
+        .set_password(&encoded)
+        .map_err(|error| {
+            WorthweaveError::BrokerSync(format!(
+                "Could not save the connection in macOS Keychain: {error}"
+            ))
+        })?;
+    connection.execute(
+        "INSERT INTO broker_connections
+         (account_id, provider, environment, pending_report_id, last_error)
+         VALUES (?1, 'ibkr', 'live', ?2, NULL)
+         ON CONFLICT(account_id) DO UPDATE SET provider='ibkr', environment='live',
+           pending_report_id=excluded.pending_report_id, external_account_id=NULL,
+           last_error=NULL, retry_after_at=NULL, updated_at=CURRENT_TIMESTAMP",
+        params![input.account_id, reference],
+    )?;
+    statuses(connection)?
+        .into_iter()
+        .find(|status| status.account_id == input.account_id)
+        .ok_or(WorthweaveError::AccountNotFound)
+}
+
 pub fn disconnect(connection: &Connection, account_id: &str) -> Result<()> {
-    ensure_trading212_account(connection, account_id)?;
-    match keychain_entry(account_id)?.delete_credential() {
+    let provider: String = connection
+        .query_row(
+            "SELECT broker FROM accounts WHERE id=?1 AND broker IN ('trading_212', 'ibkr')",
+            [account_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or(WorthweaveError::AccountNotFound)?;
+    match keychain_entry(&provider, account_id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => {}
         Err(error) => {
             return Err(WorthweaveError::BrokerSync(format!(
@@ -536,7 +820,15 @@ async fn download_csv(client: &Client, url: &str) -> Result<Vec<u8>> {
 }
 
 pub fn prepare_sync(connection: &Connection, account_id: &str) -> Result<SyncPlan> {
-    let account_type = ensure_trading212_account(connection, account_id)?;
+    let (provider, account_type): (String, String) = connection
+        .query_row(
+            "SELECT broker, account_type FROM accounts
+             WHERE id=?1 AND broker IN ('trading_212', 'ibkr')",
+            [account_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or(WorthweaveError::AccountNotFound)?;
     let (environment, pending_report, retry_after_at): (String, Option<String>, Option<String>) =
         connection
             .query_row(
@@ -555,7 +847,14 @@ pub fn prepare_sync(connection: &Connection, account_id: &str) -> Result<SyncPla
         if remaining > 0 {
             return Err(WorthweaveError::BrokerRateLimited {
                 retry_after_seconds: remaining as u64,
-                message: "Trading 212 is still cooling down. No request was sent".into(),
+                message: format!(
+                    "{} is still cooling down. No request was sent",
+                    if provider == "ibkr" {
+                        "IBKR"
+                    } else {
+                        "Trading 212"
+                    }
+                ),
             });
         }
     }
@@ -565,16 +864,37 @@ pub fn prepare_sync(connection: &Connection, account_id: &str) -> Result<SyncPla
         |row| row.get(0),
     )?;
     Ok(SyncPlan {
+        provider: provider.clone(),
         account_id: account_id.into(),
         account_type,
         environment,
         pending_report,
         coverage_end,
-        credentials: credentials(account_id)?,
+        credentials: (provider == "trading_212")
+            .then(|| credentials(account_id))
+            .transpose()?,
+        ibkr_credentials: (provider == "ibkr")
+            .then(|| ibkr_credentials(account_id))
+            .transpose()?,
     })
 }
 
 pub async fn fetch_sync(plan: &SyncPlan) -> Result<SyncFetch> {
+    if plan.provider == "ibkr" {
+        let credentials = plan
+            .ibkr_credentials
+            .as_ref()
+            .ok_or_else(|| WorthweaveError::BrokerSync("Connect this IBKR account first".into()))?;
+        return match plan.pending_report.as_deref() {
+            Some(reference) => retrieve_ibkr_report(credentials, reference).await,
+            None => Ok(SyncFetch::Requested(
+                request_ibkr_report(credentials).await?,
+            )),
+        };
+    }
+    let credentials = plan.credentials.as_ref().ok_or_else(|| {
+        WorthweaveError::BrokerSync("Connect this Trading 212 account first".into())
+    })?;
     let base = base_url(&plan.environment)?;
     let client = client()?;
     let Some(report_id) = plan.pending_report.as_deref() else {
@@ -597,10 +917,7 @@ pub async fn fetch_sync(plan: &SyncPlan) -> Result<SyncFetch> {
         let queued: EnqueuedReport = response(
             client
                 .post(format!("{base}equity/history/exports"))
-                .basic_auth(
-                    &plan.credentials.api_key,
-                    Some(&plan.credentials.api_secret),
-                )
+                .basic_auth(&credentials.api_key, Some(&credentials.api_secret))
                 .json(&request),
         )
         .await?;
@@ -610,10 +927,7 @@ pub async fn fetch_sync(plan: &SyncPlan) -> Result<SyncFetch> {
     let reports: Vec<Report> = response(
         client
             .get(format!("{base}equity/history/exports"))
-            .basic_auth(
-                &plan.credentials.api_key,
-                Some(&plan.credentials.api_secret),
-            ),
+            .basic_auth(&credentials.api_key, Some(&credentials.api_secret)),
     )
     .await?;
     let report = reports
@@ -647,18 +961,55 @@ pub async fn fetch_sync(plan: &SyncPlan) -> Result<SyncFetch> {
         WorthweaveError::BrokerSync("The completed Trading 212 report has no download link".into())
     })?;
     let csv = download_csv(&client, &download_link).await?;
-    let positions: Vec<Position> =
-        response(client.get(format!("{base}equity/positions")).basic_auth(
-            &plan.credentials.api_key,
-            Some(&plan.credentials.api_secret),
-        ))
-        .await?;
+    let positions: Vec<Position> = response(
+        client
+            .get(format!("{base}equity/positions"))
+            .basic_auth(&credentials.api_key, Some(&credentials.api_secret)),
+    )
+    .await?;
     Ok(SyncFetch::Ready {
         csv,
         positions,
         coverage_start,
         coverage_end,
     })
+}
+
+fn ibkr_account_id(csv: &[u8]) -> Result<String> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(csv);
+    let mut account_column = None;
+    let mut accounts = std::collections::BTreeSet::new();
+    for record in reader.records() {
+        let record = record.map_err(|error| WorthweaveError::Csv(error.to_string()))?;
+        if record
+            .get(0)
+            .map(|value| value.trim_start_matches('\u{feff}'))
+            == Some("ClientAccountID")
+        {
+            account_column = Some(0);
+            continue;
+        }
+        if let Some(column) = account_column
+            && let Some(account) = record
+                .get(column)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        {
+            accounts.insert(account.to_string());
+        }
+    }
+    match accounts.len() {
+        1 => Ok(accounts.into_iter().next().expect("one account")),
+        0 => Err(WorthweaveError::BrokerSync(
+            "The IBKR Flex report has no ClientAccountID. Use the Worthweave Activity Flex Query configuration in CSV format".into(),
+        )),
+        _ => Err(WorthweaveError::BrokerSync(
+            "The IBKR Flex report combines multiple accounts. Create one query and Worthweave account per IBKR account".into(),
+        )),
+    }
 }
 
 pub fn save_sync(
@@ -679,8 +1030,14 @@ pub fn save_sync(
             positions_updated: 0,
             coverage_start: None,
             coverage_end: None,
-            message: "Trading 212 is preparing your history. Worthweave will check again shortly"
-                .into(),
+            message: format!(
+                "{} is preparing your history. Worthweave will check again shortly",
+                if plan.provider == "ibkr" {
+                    "IBKR"
+                } else {
+                    "Trading 212"
+                }
+            ),
         });
     }
     if let SyncFetch::Preparing {
@@ -695,9 +1052,62 @@ pub fn save_sync(
             positions_updated: 0,
             coverage_start,
             coverage_end,
-            message:
-                "Trading 212 is still preparing your history. Worthweave will check again shortly"
-                    .into(),
+            message: format!(
+                "{} is still preparing your history. Worthweave will check again shortly",
+                if plan.provider == "ibkr" {
+                    "IBKR"
+                } else {
+                    "Trading 212"
+                }
+            ),
+        });
+    }
+    if let SyncFetch::IbkrReady { csv } = fetched {
+        let external_account_id = ibkr_account_id(&csv)?;
+        let existing: Option<String> = connection.query_row(
+            "SELECT external_account_id FROM broker_connections WHERE account_id=?1",
+            [&plan.account_id],
+            |row| row.get(0),
+        )?;
+        if existing
+            .as_deref()
+            .is_some_and(|account| account != external_account_id)
+        {
+            return Err(WorthweaveError::BrokerSync(
+                "This Flex Query now returns a different IBKR account. Reconnect it to the correct Worthweave account".into(),
+            ));
+        }
+        let mut file = Builder::new()
+            .prefix("worthweave-ibkr-flex-")
+            .suffix(".csv")
+            .tempfile()?;
+        file.write_all(&csv)?;
+        file.flush()?;
+        let result = imports::import_csv(
+            connection,
+            &plan.account_id,
+            file.path(),
+            &plan.account_type,
+        )?;
+        let positions_updated: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM broker_position_snapshots WHERE import_batch_id=?1",
+            [&result.batch_id],
+            |row| row.get(0),
+        )?;
+        connection.execute(
+            "UPDATE broker_connections SET pending_report_id=NULL, external_account_id=?2,
+             last_success_at=CURRENT_TIMESTAMP, last_error=NULL, retry_after_at=NULL,
+             updated_at=CURRENT_TIMESTAMP WHERE account_id=?1",
+            params![plan.account_id, external_account_id],
+        )?;
+        return Ok(BrokerSyncResult {
+            account_id: plan.account_id,
+            state: "complete".into(),
+            events_added: result.events_added,
+            positions_updated: positions_updated.max(0) as usize,
+            coverage_start: Some(result.coverage_start),
+            coverage_end: Some(result.coverage_end),
+            message: "IBKR Flex history is up to date".into(),
         });
     }
     let SyncFetch::Ready {
@@ -804,6 +1214,28 @@ mod tests {
     fn a_failed_finished_report_takes_precedence_over_preparing() {
         assert_eq!(sync_state(true, true, false, true), "attention");
         assert_eq!(sync_state(true, true, false, false), "preparing");
+    }
+
+    #[test]
+    fn ibkr_success_response_yields_reference_code() {
+        let fields = xml_fields(
+            br#"<FlexStatementResponse><Status>Success</Status><ReferenceCode>123456789</ReferenceCode></FlexStatementResponse>"#,
+        )
+        .expect("xml");
+        assert_eq!(fields.get("Status").map(String::as_str), Some("Success"));
+        assert_eq!(
+            fields.get("ReferenceCode").map(String::as_str),
+            Some("123456789")
+        );
+    }
+
+    #[test]
+    fn ibkr_report_must_contain_exactly_one_account() {
+        let one = b"ClientAccountID,Symbol,Quantity\nU12345,AAPL,2\nClientAccountID,Date,Amount\nU12345,2026-01-01,10\n";
+        assert_eq!(ibkr_account_id(one).expect("account"), "U12345");
+        let multiple = b"ClientAccountID,Symbol,Quantity\nU12345,AAPL,2\nU67890,MSFT,1\n";
+        assert!(ibkr_account_id(multiple).is_err());
+        assert!(ibkr_account_id(b"Symbol,Quantity\nAAPL,2\n").is_err());
     }
 
     #[test]

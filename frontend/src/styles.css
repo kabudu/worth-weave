@@ -533,6 +533,29 @@ footer { font-size:10px; }
 .ai-result-dialog>footer { display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 32px;border-top:1px solid #dbe5de;background:#f1f5f0; }.ai-result-dialog>footer small { max-width:480px;color:#6e8078;font-size:11px;line-height:1.5; }.ai-result-dialog>footer>div { display:flex;gap:10px; }.ai-result-dialog>footer button { min-width:auto;min-height:42px;padding:0 18px; }
 @media(max-width:700px){.ai-result-dialog{width:calc(100vw - 24px);max-height:calc(100vh - 24px);border-radius:19px}.ai-result-dialog>header{padding:22px}.ai-result-content{padding:24px 22px;max-height:calc(100vh - 270px)}.ai-result-dialog>footer{align-items:stretch;flex-direction:column;padding:18px 22px}.ai-result-dialog>footer>div{justify-content:flex-end}.insight-answer-ready{grid-template-columns:auto 1fr}.insight-answer-ready button{grid-column:1/-1}}
 .ai-error { display:grid;grid-template-columns:1fr auto;gap:4px 16px;align-items:center;margin-top:14px;padding:13px 14px;border:1px solid rgba(218,119,84,.28);border-radius:11px;background:rgba(128,52,32,.2); }
+
+/* Keep every application dialog spacious and consistent without exceeding the window. */
+:is(.import-dialog,.settings-dialog,.market-dialog,.about-dialog,.ai-result-dialog) {
+  width:min(1080px,calc(100vw - 32px));
+}
+.broker-connected>div { min-width:0; }
+.broker-connected .primary-button {
+  flex:0 0 auto;
+  min-width:104px;
+  white-space:nowrap;
+}
+.broker-connected .secondary-button { min-width:0;flex:1 1 auto; }
+@media(max-width:900px) and (min-width:761px) {
+  .settings-content,.broker-settings,.ai-settings,.backup-settings {
+    grid-template-columns:minmax(160px,.55fr) minmax(0,1.45fr);
+    gap:28px;
+  }
+}
+@media(max-width:600px) {
+  :is(.import-dialog,.settings-dialog,.market-dialog,.about-dialog,.ai-result-dialog) {
+    width:calc(100vw - 24px);
+  }
+}
 .ai-error strong,.ai-error span { display:block; }.ai-error strong { color:#ffd8ca;font-size:12px; }.ai-error span { color:#e9b7a6;font-size:10px;line-height:1.45; }.ai-error button { grid-column:2;grid-row:1/3;min-height:36px;padding:0 12px;border:1px solid rgba(255,216,202,.22);border-radius:8px;background:rgba(255,255,255,.07);color:#ffe6dc;font-size:10px;font-weight:700; }
 @keyframes ai-pulse { to { opacity:.25;transform:translateY(-2px); } }
 @media(prefers-reduced-motion:reduce){.ai-working i{animation:none}}

@@ -8,6 +8,8 @@ frontend_version="$(node -p "require('./frontend/package.json').version")"
 tauri_version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
 cargo_version="$(sed -n '/^\[package\]/,/^\[/s/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -1)"
 
+scripts/test-release-notes.sh
+
 if [[ -z "$cargo_version" || "$frontend_version" != "$cargo_version" || "$tauri_version" != "$cargo_version" ]]; then
   printf 'Version mismatch: frontend=%s tauri=%s cargo=%s\n' "$frontend_version" "$tauri_version" "$cargo_version" >&2
   exit 1

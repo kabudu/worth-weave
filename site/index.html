@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#10251f" />
+    <title>Worthweave — Private portfolio intelligence for macOS</title>
+    <meta name="description" content="Bring Trading 212, Interactive Brokers, and Robinhood investments into one private, local-first macOS portfolio." />
+    <meta property="og:title" content="Worthweave — Private portfolio intelligence" />
+    <meta property="og:description" content="Exact portfolio analysis across your brokers, with local storage and read-only connections." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://kabudu.github.io/worth-weave/assets/worthweave-social.png" />
+    <meta property="og:url" content="https://kabudu.github.io/worth-weave/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="assets/worthweave-icon.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="nav shell">
+      <a class="brand" href="#top" aria-label="Worthweave home">
+        <img src="assets/worthweave-icon.png" alt="" />
+        <span>Worthweave</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#privacy">Privacy</a>
+        <a href="#features">Features</a>
+        <a class="button button-small" href="https://github.com/kabudu/worth-weave/releases/latest">Download for macOS</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero shell">
+        <div class="hero-copy">
+          <p class="eyebrow">Local-first · Open source · macOS</p>
+          <h1>Your portfolio.<br /><em>Woven together.</em></h1>
+          <p class="lede">Worthweave brings investments held across Trading 212, Interactive Brokers, and Robinhood into one coherent, private view—without sending your financial history to someone else’s server.</p>
+          <div class="actions">
+            <a class="button" href="https://github.com/kabudu/worth-weave/releases/latest">Download the latest release</a>
+            <a class="text-link" href="https://github.com/kabudu/worth-weave">View source on GitHub <span aria-hidden="true">↗</span></a>
+          </div>
+          <p class="requirements">Native Apple Silicon app · macOS 13 or later · Apache-2.0</p>
+        </div>
+        <div class="hero-art" aria-label="Worthweave portfolio preview">
+          <div class="glow"></div>
+          <img src="assets/worthweave-overview.png" alt="Worthweave overview showing a fictional consolidated portfolio" />
+        </div>
+      </section>
+
+      <section class="trust-strip" aria-label="Worthweave principles">
+        <div class="shell trust-grid">
+          <div><strong>Local by default</strong><span>Portfolio data stays on your Mac.</span></div>
+          <div><strong>Read-only connections</strong><span>No order or trading permissions.</span></div>
+          <div><strong>Exact calculations</strong><span>Deterministic Rust, not AI guesses.</span></div>
+        </div>
+      </section>
+
+      <section id="features" class="section shell">
+        <div class="section-heading">
+          <p class="eyebrow">One portfolio, every account</p>
+          <h2>See the whole story behind the total.</h2>
+          <p>Worthweave reconstructs holdings from broker history while keeping each provider, account, currency, and tax wrapper distinct.</p>
+        </div>
+        <div class="feature-grid">
+          <article><span>01</span><h3>Consolidated reporting</h3><p>Track value, gains, income, allocation, and true total return in your chosen reporting currency.</p></article>
+          <article><span>02</span><h3>Broker-aware imports</h3><p>Import Trading 212 and IBKR CSVs, or use verified read-only connections with idempotent synchronisation.</p></article>
+          <article><span>03</span><h3>Honest completeness</h3><p>Missing prices, history, or exchange rates are surfaced clearly—never filled with plausible-looking estimates.</p></article>
+          <article><span>04</span><h3>Optional local AI</h3><p>Use Rapid-MLX or Ollama to explain application-calculated results without changing the ledger.</p></article>
+        </div>
+      </section>
+
+      <section class="showcase shell">
+        <div class="showcase-copy">
+          <p class="eyebrow">Traceable performance</p>
+          <h2>From holdings to attribution.</h2>
+          <p>Understand what changed your portfolio through realised and unrealised gains, dividends, interest, fees, and taxes—with the underlying data-completeness status always visible.</p>
+          <ul>
+            <li>Allocation by broker, account, asset class, sector, geography, and currency</li>
+            <li>Immutable imported source records with duplicate prevention</li>
+            <li>Encrypted, versioned backups and human-readable exports</li>
+          </ul>
+        </div>
+        <div class="window-frame">
+          <img src="assets/worthweave-portfolio.png" alt="Worthweave portfolio view showing fictional holdings and return attribution" loading="lazy" />
+        </div>
+      </section>
+
+      <section id="privacy" class="privacy">
+        <div class="shell privacy-inner">
+          <div>
+            <p class="eyebrow">Privacy is architecture</p>
+            <h2>Your financial history is not a business model.</h2>
+          </div>
+          <div class="privacy-copy">
+            <p>Broker files are parsed locally. Portfolio data lives in an owner-only SQLite database. Optional broker credentials are stored in macOS Keychain, and local AI is restricted to services running on your own machine.</p>
+            <a class="text-link light" href="https://github.com/kabudu/worth-weave/blob/master/docs/security.md">Read the security model <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta shell">
+        <img src="assets/worthweave-icon.png" alt="" />
+        <p class="eyebrow">Worthweave v0.3.1</p>
+        <h2>Bring your investments into focus.</h2>
+        <p>Free, open-source portfolio analysis for Apple Silicon Macs.</p>
+        <a class="button" href="https://github.com/kabudu/worth-weave/releases/latest">Download from GitHub</a>
+        <small>Worthweave provides analysis, not financial advice.</small>
+      </section>
+    </main>
+
+    <footer class="shell">
+      <div class="brand"><img src="assets/worthweave-icon.png" alt="" /><span>Worthweave</span></div>
+      <p>Private portfolio intelligence, woven locally.</p>
+      <a href="https://github.com/kabudu/worth-weave">GitHub</a>
+    </footer>
+  </body>
+</html>

@@ -70,7 +70,7 @@ jobs:
       - name: Audit Rust dependencies
         run: |
           cargo install cargo-audit --version 0.22.1 --locked
-          cargo audit --file src-tauri/Cargo.lock
+          ./scripts/audit-rust.sh
 
   dependency-review:
     if: github.event_name == 'pull_request' && !github.event.repository.private

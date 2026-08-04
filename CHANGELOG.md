@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Show positive portfolio gains in green and losses in red so holding performance is easier to scan.
+
+### Security
+
+- Keep Rust dependency auditing strict while guarding a temporary exception for an unused optional archival dependency.
+
 ## [0.3.0] - 2026-07-26
 
 ### Added

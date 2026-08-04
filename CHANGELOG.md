@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-04
+
+Worthweave 0.3.1 makes portfolio results easier to scan and keeps dependency auditing strict without treating an unused optional feature as part of the shipped application.
+
 ### Changed
 
 - Show positive portfolio gains in green and losses in red so holding performance is easier to scan.
@@ -79,7 +83,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/kabudu/worth-weave/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/kabudu/worth-weave/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kabudu/worth-weave/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kabudu/worth-weave/compare/v0.1.0...v0.1.1

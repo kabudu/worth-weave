@@ -37,7 +37,7 @@ h1 { margin-bottom: 26px; font-size: clamp(3.8rem, 6.8vw, 6.6rem); }
 h1 em { color: var(--green); font-weight: 400; }
 .lede { max-width: 650px; color: var(--muted); font-size: 1.13rem; }
 .actions { display: flex; align-items: center; gap: 25px; margin-top: 34px; }
-.actions .button { flex: 0 0 auto; white-space: nowrap; }
+.actions .button { flex: 0 0 auto; padding-inline: 18px; white-space: nowrap; }
 .requirements { margin-top: 22px; color: #728079; font-size: .8rem; }
 .hero-art { position: relative; min-width: 720px; }
 .hero-art img { position: relative; z-index: 1; width: 900px; max-width: none; border-radius: 19px; box-shadow: 0 32px 80px rgba(23,48,40,.23); border: 1px solid rgba(255,255,255,.8); }

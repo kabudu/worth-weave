@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Update the pinned pnpm release and its GitHub setup action after pnpm marked the previous release as broken.
+
 ## [0.3.2] - 2026-08-08
 
 Worthweave 0.3.2 introduces a public project website and makes privacy, setup, market data, returns, backups, and private AI easier to understand without hiding the broker terms users still need.

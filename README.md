@@ -99,7 +99,7 @@ Requirements:
 
 - macOS 13 or later.
 - Node.js 22 or later.
-- pnpm 11.13.0.
+- pnpm 11.20.0.
 - Rust 1.97.0, installed automatically from `rust-toolchain.toml` when using rustup.
 
 Install dependencies and start the native development application:

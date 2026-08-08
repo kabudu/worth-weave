@@ -131,7 +131,7 @@ function AttributionPanel({ report }: { report: TotalReturnAttribution }) {
     ["Interest", report.interest, false, "Needs transaction-date exchange rates"],
     ["Fees", report.fees, true, "Needs transaction-date exchange rates"],
     ["Taxes", report.taxes, true, "Needs transaction-date exchange rates"],
-    ["Currency movement", report.fx_impact, false, "Historical FX attribution not ready"],
+    ["Currency movement", report.fx_impact, false, "Some historical exchange rates are still missing"],
   ] as const;
   const headline = report.total_return ?? report.attributed_subtotal;
   return <section className="attribution-card" aria-labelledby="attribution-title">

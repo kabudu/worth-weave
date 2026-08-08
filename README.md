@@ -74,7 +74,7 @@ Prices and investment categories are configured after import, when Worthweave kn
 
 ## Privacy and financial integrity
 
-- Portfolio data is stored in a local SQLite database with owner-only filesystem permissions.
+- Portfolio data stays in a private, local database on your Mac. Worthweave restricts access so other user accounts on the Mac cannot open it.
 - Broker CSV files are parsed locally and never require credentials. Optional API connections store credentials only in macOS Keychain.
 - Imported source records are immutable.
 - Missing history, prices, or exchange rates produce explicit partial or unavailable states rather than estimates.

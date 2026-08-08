@@ -20,9 +20,10 @@ export function AiOnboarding() {
       {recommendation.isPending && <div className="ai-choice">Finding the best option for this Mac…</div>}
       {recommendation.isError && <div className="form-error" role="alert">We couldn’t check this Mac: {String(recommendation.error)}</div>}
       {choice && <div className="ai-choice">
-        <div className="ai-choice-heading"><span>✦</span><div><small>Recommended private AI</small><strong>{choice.runtime_name}</strong></div>{choice.installed && <em>Installed</em>}</div>
-        <dl><div><dt>AI model</dt><dd>{choice.model}</dd></div><div><dt>Why we chose it</dt><dd>{choice.rationale}</dd></div></dl>
+        <div className="ai-choice-heading"><span>✦</span><div><small>Recommended private AI</small><strong>Chosen for this Mac</strong></div>{choice.installed && <em>Installed</em>}</div>
+        <dl><div><dt>Why it fits</dt><dd>{choice.rationale}</dd></div></dl>
         <p>Setup uses the official installer and downloads files that may take several gigabytes of storage. Nothing is installed without your permission.</p>
+        <details className="technical-details"><summary>Technical details</summary><p>{choice.runtime_name} · {choice.model}</p></details>
       </div>}
       <div className="ai-actions">
         <button className="primary-button" type="button" disabled={!choice || !choice.supported || busy} onClick={() => setup.mutate()}>{setup.isPending ? "Setting up private AI…" : "Set up private AI"}<span>→</span></button>
@@ -40,7 +41,7 @@ export function AiSettingsPanel({ runtime, model }: { runtime: string | null; mo
   const recommendation = useQuery({ queryKey: ["ai-recommendation"], queryFn: ({ signal }) => getAiRecommendation(signal), staleTime: Infinity });
   const setup = useMutation({ mutationFn: setupRecommendedAi, onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["settings"] }) });
   return <section className="ai-settings">
-    <div><h3>Private AI</h3><p>{runtime && model ? `${runtime} · ${model}` : "AI answers are turned off."}</p></div>
-    <div><p>{recommendation.data ? `Best option for this Mac: ${recommendation.data.runtime_name} with ${recommendation.data.model}.` : "Checking this Mac…"}</p><button className="secondary-button" type="button" disabled={!recommendation.data || setup.isPending} onClick={() => setup.mutate()}>{setup.isPending ? "Downloading and setting up…" : runtime ? "Set up again" : "Set up private AI"}</button>{setup.isPending && <small className="ai-setup-status" role="status">Keep Worthweave open. The model is several gigabytes and may take a while to download.</small>}{setup.isSuccess && <small className="ai-setup-success" role="status">Private AI is ready to use.</small>}{setup.isError && <small className="form-error" role="alert">Setup couldn’t finish: {String(setup.error)}</small>}</div>
+    <div><h3>Private AI</h3><p>{runtime && model ? "Private AI is ready on this Mac." : "AI answers are turned off."}</p></div>
+    <div><p>{recommendation.data ? "Worthweave has chosen an option that suits the available resources on this Mac." : "Checking this Mac…"}</p>{recommendation.data && <details className="technical-details"><summary>Technical details</summary><p>{recommendation.data.runtime_name} · {recommendation.data.model}</p></details>}<button className="secondary-button" type="button" disabled={!recommendation.data || setup.isPending} onClick={() => setup.mutate()}>{setup.isPending ? "Downloading and setting up…" : runtime ? "Set up again" : "Set up private AI"}</button>{setup.isPending && <small className="ai-setup-status" role="status">Keep Worthweave open. The download is several gigabytes and may take a while.</small>}{setup.isSuccess && <small className="ai-setup-success" role="status">Private AI is ready to use.</small>}{setup.isError && <small className="form-error" role="alert">Setup couldn’t finish: {String(setup.error)}</small>}</div>
   </section>;
 }

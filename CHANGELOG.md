@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Publish a responsive project website with privacy, feature, product preview, and macOS download information.
+
+### Changed
+
+- Replace implementation-led wording across the website, settings, market data, returns, backups, and private AI setup with clearer everyday language.
+- Keep broker-issued credential names available where users must copy them, while adding plain-English setup guidance.
+
 ## [0.3.1] - 2026-08-04
 
 Worthweave 0.3.1 makes portfolio results easier to scan and keeps dependency auditing strict without treating an unused optional feature as part of the shipped application.

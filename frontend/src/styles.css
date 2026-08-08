@@ -501,6 +501,7 @@ footer { font-size:10px; }
 .settings-dialog .currency-submit { min-width:190px;height:48px;margin-top:18px;padding:0 18px; }
 .settings-dialog .currency-submit span { float:none;margin:0 0 0 24px; }
 .ai-settings .secondary-button { min-height:48px;margin-top:16px;padding:0 18px;border-radius:var(--form-control-radius); }
+.technical-details{margin-top:12px;color:#65766e;font-size:10px}.technical-details summary{cursor:pointer;font-weight:700}.technical-details p{margin-top:7px!important;overflow-wrap:anywhere}
 .backup-settings input { font-size:14px; }
 .backup-settings .restore-confirm { min-height:34px;margin-top:14px;line-height:1.4; }
 .restore-toggle { width:44px;height:25px;padding:3px; }.restore-toggle>span { width:17px;height:17px; }.restore-confirm input:checked+.restore-toggle>span { transform:translateX(19px); }

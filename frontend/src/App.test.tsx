@@ -132,7 +132,8 @@ test("offers a read-only Trading 212 connection per local account", async () => 
   fireEvent.click(screen.getAllByRole("button", { name: /settings/i })[0]!);
   expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
   expect(screen.getAllByText("Trading 212 ISA").length).toBeGreaterThan(0);
-  expect(screen.getByRole("button", { name: /connect read-only/i })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /connect account/i })).toBeEnabled();
+  expect(screen.getByText(/saves them securely on this Mac/i)).toBeInTheDocument();
   expect(screen.getByText(/never receives trading permission/i)).toBeInTheDocument();
 });
 
@@ -152,7 +153,8 @@ test("offers an IBKR Flex connection per local IBKR account", async () => {
   fireEvent.click(screen.getAllByRole("button", { name: /settings/i })[0]!);
   expect(await screen.findByLabelText("Flex token")).toBeInTheDocument();
   expect(screen.getByLabelText("Activity Query ID")).toHaveAttribute("inputmode", "numeric");
-  expect(screen.getByRole("button", { name: /connect flex query/i })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /connect account/i })).toBeEnabled();
+  expect(screen.getByText(/setup guide explains each step/i)).toBeInTheDocument();
 });
 
 test("presents private AI markdown as a structured results dialog", async () => {
@@ -223,7 +225,11 @@ test("offers explicit device-tuned local AI setup or skip", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
   expect(await screen.findByRole("heading", { name: /clear answers/i })).toBeInTheDocument();
-  expect(await screen.findByText("gpt-oss-20b-mxfp4-q8")).toBeInTheDocument();
+  expect(await screen.findByText("Chosen for this Mac")).toBeInTheDocument();
+  const technicalDetails = screen.getByText("Technical details").closest("details");
+  expect(technicalDetails).not.toBeNull();
+  fireEvent.click(screen.getByText("Technical details"));
+  expect(technicalDetails).toHaveTextContent("gpt-oss-20b-mxfp4-q8");
   expect(screen.getByRole("button", { name: /^set up private ai/i })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: /continue without ai/i }));
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("skip_ai_setup"));

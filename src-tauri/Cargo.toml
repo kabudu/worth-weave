@@ -25,7 +25,7 @@ rusqlite = { version = "0.40.1", features = ["backup", "bundled", "uuid"] }
 futures-util = "0.3.32"
 keyring = "4.1.4"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "stream", "rustls"] }
-quick-xml = "0.41.0"
+quick-xml = "0.42.0"
 rust_decimal = { version = "1.42.1", features = ["serde-with-str"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"

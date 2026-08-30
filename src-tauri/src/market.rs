@@ -805,7 +805,7 @@ fn parse_ecb_reference_rates(xml: &str) -> Result<EcbReferenceRates> {
         match reader.read_event() {
             Ok(quick_xml::events::Event::Empty(element))
             | Ok(quick_xml::events::Event::Start(element))
-                if element.name().as_ref().ends_with(b"Cube") =>
+                if element.name().as_ref().ends_with("Cube") =>
             {
                 let mut currency = None;
                 let mut rate = None;
@@ -816,10 +816,7 @@ fn parse_ecb_reference_rates(xml: &str) -> Result<EcbReferenceRates> {
                         )
                     })?;
                     let value = attribute
-                        .decoded_and_normalized_value(
-                            quick_xml::XmlVersion::Explicit1_0,
-                            reader.decoder(),
-                        )
+                        .normalized_value(quick_xml::XmlVersion::Explicit1_0)
                         .map_err(|_| {
                             WorthweaveError::InvalidMarketData(
                                 "ECB exchange-rate response contains invalid text".into(),
@@ -827,9 +824,9 @@ fn parse_ecb_reference_rates(xml: &str) -> Result<EcbReferenceRates> {
                         })?
                         .into_owned();
                     match attribute.key.as_ref() {
-                        b"time" => date = Some(value),
-                        b"currency" => currency = Some(value),
-                        b"rate" => rate = Some(value),
+                        "time" => date = Some(value),
+                        "currency" => currency = Some(value),
+                        "rate" => rate = Some(value),
                         _ => {}
                     }
                 }

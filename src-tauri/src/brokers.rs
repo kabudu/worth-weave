@@ -171,20 +171,11 @@ fn xml_fields(content: &[u8]) -> Result<std::collections::HashMap<String, String
     loop {
         match reader.read_event() {
             Ok(Event::Start(tag)) => {
-                current = Some(String::from_utf8_lossy(tag.name().as_ref()).into_owned());
+                current = Some(tag.name().as_ref().to_owned());
             }
             Ok(Event::Text(text)) => {
                 if let Some(name) = current.take() {
-                    fields.insert(
-                        name,
-                        text.decode()
-                            .map_err(|_| {
-                                WorthweaveError::BrokerSync(
-                                    "IBKR returned an unreadable response".into(),
-                                )
-                            })?
-                            .into_owned(),
-                    );
+                    fields.insert(name, text.xml10_content().into_owned());
                 }
             }
             Ok(Event::Eof) => break,

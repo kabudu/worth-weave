@@ -6,9 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-09-23
+
+Worthweave 0.3.4 makes equity concentration easier to see in the Portfolio table and refreshes application dependencies.
+
 ### Added
 
-- Show each valued equity holding as a percentage of the complete portfolio on the Portfolio screen.
+- Show each valued equity holding as a percentage of the complete portfolio beside its name. Warrants and other investment types show no percentage.
+
+### Changed
+
+- Update frontend dependencies, including React, Zod, Vite, and Vitest, and refresh the Rust `uuid` patch release.
 
 ## [0.3.3] - 2026-09-17
 
@@ -113,7 +121,8 @@ Worthweave 0.3.1 makes portfolio results easier to scan and keeps dependency aud
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/kabudu/worth-weave/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/kabudu/worth-weave/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/kabudu/worth-weave/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/kabudu/worth-weave/compare/v0.3.0...v0.3.1

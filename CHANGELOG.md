@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Show each valued equity holding as a percentage of the complete portfolio on the Portfolio screen.
+
 ## [0.3.3] - 2026-09-17
 
 Worthweave 0.3.3 refreshes application dependencies and fixes a vulnerability in the rustls TLS library.

@@ -23,7 +23,7 @@ jobs:
     permissions:
       contents: write
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -170,7 +170,26 @@ jobs:
           grep -F "Authority=$APPLE_SIGNING_IDENTITY" <<<"$codesign_details"
           grep -F "flags=0x10000(runtime)" <<<"$codesign_details"
           spctl --assess --type execute --verbose=2 "$app"
-          xcrun stapler validate "$app"
+          # Apple's ticket lookup can briefly return HTTP 503 after notarization.
+          # Retry only that service error; never accept an invalid or absent ticket.
+          for attempt in 1 2 3 4 5 6 7; do
+            if stapler_output="$(xcrun stapler validate "$app" 2>&1)"; then
+              printf '%s\n' "$stapler_output"
+              break
+            else
+              stapler_status=$?
+            fi
+            printf '%s\n' "$stapler_output"
+            if [[ "$stapler_status" -ne 68 ]] || ! grep -Fq 'Status Code: 503' <<<"$stapler_output"; then
+              exit "$stapler_status"
+            fi
+            if [[ "$attempt" -eq 7 ]]; then
+              echo 'Apple ticket service remained unavailable after seven attempts.' >&2
+              exit "$stapler_status"
+            fi
+            echo "Apple ticket service unavailable; retrying stapler validation in five minutes ($attempt/7)."
+            sleep 300
+          done
           # Tauri notarizes and staples the application before packaging it in
           # the DMG. The disk image itself therefore has no stapled ticket.
           hdiutil verify "$dmg"

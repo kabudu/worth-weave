@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-09-23
+
+Worthweave 0.3.6 values sterling pence quotes correctly so portfolios with GBX positions can show complete totals and equity percentages.
+
 ### Fixed
 
-- Convert GBX and GBPENCE prices to pounds at their exact pence ratio so sterling portfolios with pence-quoted positions can receive a complete valuation and equity percentages.
+- Convert GBX and GBPENCE prices to pounds at their exact pence ratio when calculating current portfolio value and equity percentages.
 
 ## [0.3.5] - 2026-09-23
 
@@ -133,7 +137,8 @@ Worthweave 0.3.1 makes portfolio results easier to scan and keeps dependency aud
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/kabudu/worth-weave/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/kabudu/worth-weave/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/kabudu/worth-weave/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/kabudu/worth-weave/compare/v0.3.2...v0.3.3

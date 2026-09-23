@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Convert GBX and GBPENCE prices to pounds at their exact pence ratio so sterling portfolios with pence-quoted positions can receive a complete valuation and equity percentages.
+
 ## [0.3.5] - 2026-09-23
 
 Worthweave 0.3.5 restores portfolio percentages for IBKR stock holdings such as OPEN.

@@ -965,9 +965,29 @@ fn price(connection: &Connection, instrument_id: &str) -> Result<Option<(PriceQu
     }).transpose()
 }
 
+fn is_sterling_pence(currency: &str) -> bool {
+    matches!(currency, "GBX" | "GBPENCE")
+}
+
 fn fx(connection: &Connection, base: &str, quote: &str) -> Result<Option<(Decimal, bool)>> {
-    if base == quote {
+    if base == quote || (is_sterling_pence(base) && is_sterling_pence(quote)) {
         return Ok(Some((Decimal::ONE, false)));
+    }
+    if is_sterling_pence(base) {
+        if quote == "GBP" {
+            return Ok(Some((Decimal::new(1, 2), false)));
+        }
+        return Ok(
+            fx(connection, "GBP", quote)?.map(|(rate, stale)| (rate / Decimal::from(100), stale))
+        );
+    }
+    if is_sterling_pence(quote) {
+        if base == "GBP" {
+            return Ok(Some((Decimal::from(100), false)));
+        }
+        return Ok(
+            fx(connection, base, "GBP")?.map(|(rate, stale)| (rate * Decimal::from(100), stale))
+        );
     }
     let direct: Option<(String, u32, String)> = connection.query_row(
         "SELECT rate_coefficient, rate_scale, as_of FROM fx_rates WHERE base_currency=?1 AND quote_currency=?2",
@@ -1818,6 +1838,48 @@ mod tests {
                 .expect("manual FX")
                 .map(|(rate, _)| rate),
             Some(Decimal::from_str("0.75").expect("manual rate"))
+        );
+    }
+
+    #[test]
+    fn pence_quoted_positions_complete_sterling_valuation() {
+        let directory = tempfile::tempdir().expect("temp directory");
+        let connection = db::open(&directory.path().join("worthweave.db")).expect("database");
+        connection
+            .execute_batch(
+                "INSERT INTO accounts (id, broker, jurisdiction, account_type, external_id, display_name, base_currency)
+                 VALUES ('account', 'trading_212', 'GB', 'invest', 'example', 'Example account', 'GBP');
+                 INSERT INTO import_batches (id, account_id, original_filename, content_sha256)
+                 VALUES ('batch', 'account', 'example.csv', 'example');
+                 INSERT INTO instruments (id, symbol, asset_class)
+                 VALUES ('pence', 'PENCE', 'STK'), ('pounds', 'POUNDS', 'STK');
+                 INSERT INTO broker_position_snapshots
+                   (id, account_id, import_batch_id, report_date, instrument_id, quantity_coefficient, quantity_scale)
+                 VALUES ('pence-position', 'account', 'batch', '2026-09-23', 'pence', '2', 0),
+                        ('pounds-position', 'account', 'batch', '2026-09-23', 'pounds', '1', 0);
+                 INSERT INTO market_prices
+                   (instrument_id, price_coefficient, price_scale, currency, as_of, source)
+                 VALUES ('pence', '12345', 2, 'GBX', '2026-09-23T12:00:00Z', 'trading_212_api'),
+                        ('pounds', '10', 0, 'GBP', '2026-09-23T12:00:00Z', 'manual');",
+            )
+            .expect("portfolio fixture");
+
+        let valuation = valuation(&connection).expect("portfolio valuation");
+        assert!(valuation.valuation_complete);
+        assert_eq!(valuation.missing_fx_count, 0);
+        assert_eq!(valuation.valued_holding_count, 2);
+        assert_eq!(valuation.total_value.as_deref(), Some("12.469"));
+        assert_eq!(
+            valuation.holdings[0].reporting_value.as_deref(),
+            Some("2.469")
+        );
+        assert_eq!(
+            fx(&connection, "GBPENCE", "GBP").expect("pence conversion"),
+            Some((Decimal::new(1, 2), false))
+        );
+        assert_eq!(
+            fx(&connection, "GBP", "GBX").expect("reverse conversion"),
+            Some((Decimal::from(100), false))
         );
     }
 }

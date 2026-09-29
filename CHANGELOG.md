@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Clarify the landing page’s advantage over portfolio spreadsheets, show the import-to-report workflow with full-size screenshots, improve typography and readability, and document current broker support, setup requirements, storage and network connections.
+
 ## [0.3.6] - 2026-09-23
 
 Worthweave 0.3.6 values sterling pence quotes correctly so portfolios with GBX positions can show complete totals and equity percentages.

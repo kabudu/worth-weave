@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.3.7] - 2026-10-22
+## [0.3.7] - 2026-10-23
 
 Worthweave 0.3.7 refreshes application dependencies and improves the landing page's explanation of portfolio imports and reports.
 

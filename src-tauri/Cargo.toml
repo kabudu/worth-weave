@@ -1,6 +1,6 @@
 [package]
 name = "worthweave"
-version = "0.3.6"
+version = "0.3.7"
 description = "Private local-first investment portfolio"
 authors = ["Worthweave contributors"]
 edition = "2024"

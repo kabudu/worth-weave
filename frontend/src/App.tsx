@@ -204,8 +204,8 @@ export function App() {
             <span>Your data stays on this Mac</span>
           </div>
         </div>
-        <button className="profile-button" type="button" aria-label="Open local profile settings" onClick={() => setSettingsOpen(true)}>
-          <span className="avatar">W</span>
+        <button className="profile-button" type="button" title="Open local profile settings" onClick={() => setSettingsOpen(true)}>
+          <span className="avatar" aria-hidden="true">W</span>
           <span><strong>Local portfolio</strong><small>{reportingCurrency} · macOS</small></span>
           <span aria-hidden="true">•••</span>
         </button>

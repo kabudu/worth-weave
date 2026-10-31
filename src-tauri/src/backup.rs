@@ -13,6 +13,38 @@ use crate::{db, market, projections};
 
 const MAX_BACKUP_BYTES: u64 = 1024 * 1024 * 1024;
 
+#[cfg(test)]
+mod compatibility_tests {
+    use std::io::Read;
+
+    #[test]
+    fn decrypts_age_0121_passphrase_fixture() {
+        // Generated with unmodified crates.io age 0.12.1. Synthetic data only.
+        let hex = "6167652d656e6372797074696f6e2e6f72672f76310a2d3e2073637279707420725a434e39414233324b782f5163654e5437716a57772031330a396c57572b713235676b672f6944453261372f4c4b4a6631366f7a687579676c666f4d5a44575959546c6b0a2d2d2d2032714a6e6d2b565447566f7a58504f542b4f72456635396f4a4b71796d574d576e7777476c4d34714243670a4b4587a9099ce69c7743596b880f0e626d28d7aa45ad6d8c6f4e87c8e19c7369a7d630fce6b81b1cd235e7012c9c7ddacdc8698134e2fd4b2ec2399b739d87d33a8be21a930ded4c0bd976";
+        let encrypted: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|offset| u8::from_str_radix(&hex[offset..offset + 2], 16).unwrap())
+            .collect();
+        let identity = age::scrypt::Identity::new(age::secrecy::SecretString::from(
+            "synthetic compatibility password".to_owned(),
+        ));
+        let decryptor = age::Decryptor::new(encrypted.as_slice()).unwrap();
+        let mut reader = decryptor.decrypt(std::iter::once(&identity as _)).unwrap();
+        let mut plaintext = Vec::new();
+        reader.read_to_end(&mut plaintext).unwrap();
+        assert_eq!(plaintext, b"Worthweave age 0.12.1 compatibility fixture");
+        let wrong = age::scrypt::Identity::new(age::secrecy::SecretString::from(
+            "incorrect compatibility password".to_owned(),
+        ));
+        assert!(
+            age::Decryptor::new(encrypted.as_slice())
+                .unwrap()
+                .decrypt(std::iter::once(&wrong as _))
+                .is_err()
+        );
+    }
+}
+
 fn validate(path: &Path, password: &str) -> Result<()> {
     if password.chars().count() < 12 {
         return Err(WorthweaveError::Backup(

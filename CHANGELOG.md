@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-10-31
+
+Worthweave 0.3.8 fixes dependency security advisories while preserving compatibility with existing encrypted backups, and improves profile-button accessibility.
+
+### Changed
+
+- Refresh frontend, desktop runtime, SQLite, and CI cache dependencies.
+
 ### Fixed
 
 - Preserve the profile button's visible label in its accessible name for voice control and screen readers.
@@ -160,7 +168,8 @@ Worthweave 0.3.1 makes portfolio results easier to scan and keeps dependency aud
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.8...HEAD
+[0.3.8]: https://github.com/kabudu/worth-weave/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/kabudu/worth-weave/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/kabudu/worth-weave/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/kabudu/worth-weave/compare/v0.3.4...v0.3.5

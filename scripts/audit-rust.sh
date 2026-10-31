@@ -16,14 +16,4 @@ if cargo tree --manifest-path "$manifest" --locked -e normal -i rkyv 2>/dev/null
   exit 1
 fi
 
-# The updater's ZIP dependency is Windows-only; macOS updates use tar archives.
-# Keep these exceptions fail-closed for the macOS targets we distribute.
-for target in aarch64-apple-darwin x86_64-apple-darwin; do
-  if cargo tree --manifest-path "$manifest" --locked --target "$target" -e normal -i zip 2>/dev/null | grep -q '^zip '; then
-    echo "error: vulnerable zip dependency is active for $target" >&2
-    exit 1
-  fi
-done
-
-cargo audit --file "$lockfile" --ignore RUSTSEC-2026-0235 \
-  --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 --ignore RUSTSEC-2026-0369
+cargo audit --file "$lockfile" --ignore RUSTSEC-2026-0235

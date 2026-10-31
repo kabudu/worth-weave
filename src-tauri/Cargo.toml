@@ -23,7 +23,7 @@ tauri-build = { version = "2.6.3", features = [] }
 age = "=0.11.5"
 chrono = { version = "0.4.45", features = ["serde"] }
 csv = "1.4.0"
-rusqlite = { version = "0.40.1", features = ["backup", "bundled", "uuid"] }
+rusqlite = { version = "0.41.0", features = ["backup", "bundled", "uuid"] }
 futures-util = "0.3.32"
 keyring = "4.1.4"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "stream", "rustls"] }

@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Pin age to the patched 0.11.5 line to remove the unused P-256 recipient dependency affected by RUSTSEC-2026-0387; passphrase-encrypted backups retain their existing format.
 - Update ctutils to a patched release for RUSTSEC-2026-0385.
+- Update the desktop updater's ZIP dependency to 9.2.0 and remove the obsolete ZIP advisory exceptions from the Rust audit.
 
 ## [0.3.7] - 2026-10-23
 

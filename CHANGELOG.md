@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve the profile button's visible label in its accessible name for voice control and screen readers.
+
+### Security
+
+- Pin age to the patched 0.11.5 line to remove the unused P-256 recipient dependency affected by RUSTSEC-2026-0387; passphrase-encrypted backups retain their existing format.
+- Update ctutils to a patched release for RUSTSEC-2026-0385.
+
 ## [0.3.7] - 2026-10-23
 
 Worthweave 0.3.7 refreshes application dependencies and improves the landing page's explanation of portfolio imports and reports.

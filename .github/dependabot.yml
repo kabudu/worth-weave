@@ -7,6 +7,11 @@ updates:
     groups:
       rust-dependencies:
         patterns: ["*"]
+    ignore:
+      # age 0.12 unconditionally depends on p256 and crypto-bigint 0.5, which is
+      # affected by RUSTSEC-2026-0387. Keep the 0.11.5 pin until a patched line exists.
+      - dependency-name: age
+        versions: [">=0.12.0"]
   - package-ecosystem: npm
     directory: /frontend
     schedule:

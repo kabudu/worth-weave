@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-11-07
+
+Worthweave 0.3.9 refreshes application and build dependencies and keeps encrypted backups on the audited age 0.11.5 line.
+
+### Changed
+
+- Refresh frontend dependencies, the SQLite binding, and the CI pnpm setup action.
+
+### Security
+
+- Keep age pinned to 0.11.5 because age 0.12 reintroduces crypto-bigint 0.5 (RUSTSEC-2026-0387), and stop Dependabot from proposing age 0.12 until a patched release exists.
+- Update browserslist and baseline-browser-mapping in the frontend build tooling to patched releases.
+
 ## [0.3.8] - 2026-10-31
 
 Worthweave 0.3.8 fixes dependency security advisories while preserving compatibility with existing encrypted backups, and improves profile-button accessibility.
@@ -168,7 +181,8 @@ Worthweave 0.3.1 makes portfolio results easier to scan and keeps dependency aud
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.8...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/kabudu/worth-weave/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/kabudu/worth-weave/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/kabudu/worth-weave/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/kabudu/worth-weave/compare/v0.3.5...v0.3.6

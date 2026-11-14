@@ -1,6 +1,6 @@
 [package]
 name = "worthweave"
-version = "0.3.9"
+version = "0.3.10"
 description = "Private local-first investment portfolio"
 authors = ["Worthweave contributors"]
 edition = "2024"
@@ -40,3 +40,10 @@ tokio = { version = "1.52.3", features = ["time"] }
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-process = "2.3.1"
+
+# Xcode 27's strip leaves release procedural-macro dylibs that rustc 1.97
+# cannot load (E0463), breaking local release builds on macOS 27. Build
+# scripts and procedural macros run only on the build host, so leaving them
+# unstripped does not change the shipped application.
+[profile.release.build-override]
+strip = false

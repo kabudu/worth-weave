@@ -30,7 +30,7 @@ The tag workflow validates the version and changelog, builds and notarises the a
 1. Run Rust tests and strict Clippy.
 2. Run frontend unit tests, lint, production build, and Playwright E2E accessibility tests.
 3. Run `cargo audit` and `pnpm audit --prod`; investigate any vulnerability before release.
-4. From the repository root, build with `frontend/node_modules/.bin/tauri build`. Local builds may be unsigned or ad-hoc signed; the release workflow supplies the configured Developer ID identity.
+4. From the repository root, build with `frontend/node_modules/.bin/tauri build`. Local builds may be unsigned or ad-hoc signed; the release workflow supplies the configured Developer ID identity. `src-tauri/Cargo.toml` disables stripping for release build scripts and procedural macros because Xcode 27's `strip` leaves those host-only dylibs unloadable by rustc 1.97 (`E0463: can't find crate`). The DMG step drives Finder through AppleScript, so local DMG creation requires Finder automation permission for the terminal running the build; if it times out, the `.app` bundle is still complete.
 5. Verify the application bundle with `codesign --verify --deep --strict --verbose=2` and inspect it with `spctl --assess --type execute --verbose=2`.
 6. Run `./scripts/check-release.sh` to validate package-version alignment and changelog structure.
 7. Public releases are built by `.github/workflows/macos-release.yml`. The workflow imports the Developer ID certificate into an ephemeral keychain, validates notarisation access, runs the release gates, asks Tauri to sign and notarise, verifies the hardened-runtime signature and stapled tickets, publishes the Rust crate to crates.io, creates the GitHub Release, and publishes the DMG plus its SHA-256 checksum.

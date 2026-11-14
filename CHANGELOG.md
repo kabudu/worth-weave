@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-11-14
+
+Worthweave 0.3.10 refreshes application and build dependencies, reduces exposure to a build-tool advisory, and restores local release builds on macOS 27.
+
+### Changed
+
+- Refresh frontend dependencies (including TanStack Query, Vite, and Tailwind CSS), the SQLite binding (rusqlite 0.42), UUID support, and the CI Rust cache action.
+
+### Fixed
+
+- Keep Cargo from stripping release build scripts and procedural macros, which Xcode 27 toolchains left unloadable and caused local release builds to fail.
+
+### Security
+
+- Update ESLint so its file matching uses the patched minimatch 11 line (GHSA-g3hv-75wg-m249). Remaining build-tool paths through typescript-eslint stay on minimatch 10 until a stable compatible release is available; production dependencies are unaffected.
+- Keep age pinned to 0.11.5 to avoid RUSTSEC-2026-0387; encrypted backups retain their existing format.
+
 ## [0.3.9] - 2026-11-07
 
 Worthweave 0.3.9 refreshes application and build dependencies and keeps encrypted backups on the audited age 0.11.5 line.
@@ -181,7 +198,8 @@ Worthweave 0.3.1 makes portfolio results easier to scan and keeps dependency aud
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.9...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.10...HEAD
+[0.3.10]: https://github.com/kabudu/worth-weave/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/kabudu/worth-weave/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/kabudu/worth-weave/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/kabudu/worth-weave/compare/v0.3.6...v0.3.7

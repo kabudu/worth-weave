@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-11-21
+
+Worthweave 0.3.11 updates the desktop runtime and SQLite, and includes the changes prepared for the unpublished 0.3.10 release.
+
+### Changed
+
+- Update the Tauri runtime and JavaScript packages, SQLite bindings (rusqlite 0.43), UUID support, frontend dependencies, and the CI dependency review action.
+
+### Fixed
+
+- Restore local release builds on macOS 27 by preserving symbols in build scripts and procedural macros.
+
+### Security
+
+- Use the patched minimatch 11 line in ESLint while retaining the age 0.11.5 pin and compatibility with existing encrypted backups.
+
 ## [0.3.10] - 2026-11-14
 
 Worthweave 0.3.10 refreshes application and build dependencies, reduces exposure to a build-tool advisory, and restores local release builds on macOS 27.
@@ -198,7 +214,8 @@ Worthweave 0.3.1 makes portfolio results easier to scan and keeps dependency aud
 - Loopback-only local AI access, restrictive content security policy, and owner-only local storage.
 - Update archives signed by a dedicated key and verified against a public key embedded in the application.
 
-[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.10...HEAD
+[Unreleased]: https://github.com/kabudu/worth-weave/compare/v0.3.11...HEAD
+[0.3.11]: https://github.com/kabudu/worth-weave/compare/v0.3.9...v0.3.11
 [0.3.10]: https://github.com/kabudu/worth-weave/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/kabudu/worth-weave/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/kabudu/worth-weave/compare/v0.3.7...v0.3.8
